@@ -140,7 +140,7 @@
 感谢
 ----------
 - [bunny_i](https://github.com/bunnyi116): 为该项目提供了全方面支持。
-- [K1nse_/litematica-printer](https://github.com/K1nse_/litematica-printer): 如果没有 [K1nse_](https://github.com/K1nse_) 的成果，那么整个改版分支将不存在！
+- [K1nse_/litematica-printer](https://github.com/K1nse_/litematica-printer): 感谢 [K1nse_](https://github.com/K1nse_) 对本分支的优化与适配。
 - [zhaixianyu/litematica-printer](https://github.com/zhaixianyu/litematica-printer): 在原著的基础上解决了很多问题，同时也引进了很多新的内容。
 - [MoRanpcy/quickshulker](https://github.com/MoRanpcy/quickshulker): 新版的快捷潜影盒支持。
 - [bunnyi116/fabric-bedrock-miner](https://github.com/bunnyi116/fabric-bedrock-miner): 新的破基岩模式前置。
