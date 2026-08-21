@@ -1,8 +1,5 @@
-# Litematica Printer - K1nse_ 二改版（Hana Version 四改）
+# Litematica Printer - K1nse_ 二改版
 ==================
-
-> **上游原作**：[Yur1Ca/litematica-printer](https://github.com/Yur1Ca/litematica-printer)（Hana 版）
-> **本分支**：基于 Hana 版二改（K1nse_ 四改），保留上游全部功能并针对个人服务器适配
 
 该模组为 投影(Litematica) 的 Minecraft Fabric 1.18.2 至 26.2 版本添加了自动建造功能。允许玩家通过自动放置周围正确方块来快速还原投影。
 
