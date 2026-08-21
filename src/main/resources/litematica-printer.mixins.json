@@ -1,0 +1,35 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "me.K1nse_.litematica.printer.mixin",
+  "compatibilityLevel": "${compatibility_level}",
+  "mixins": [
+    "printer.litematica.EasyPlaceUtilsAccessor",
+    "printer.litematica.InventoryUtilsAccessor",
+    "printer.litematica.MixinInventoryUtils",
+    "printer.malilib.config.MixinConfigBase",
+    "printer.malilib.config.MixinIConfigBase",
+    "printer.mc.MixinBlockItem",
+    "printer.mc.MixinConnection",
+    "printer.mc.MixinServerboundMovePlayerPacket"
+  ],
+  "client": [
+    "MixinClientPacketListener",
+    "printer.litematica.gui.MixinLitematicaGuiMainMenu",
+    "printer.malilib.MixinAbstractCraftingMenu",
+    "printer.malilib.MixinGuiStringListEdit",
+    "printer.malilib.MixinConfigButtonStringList",
+    "printer.mc.BeaconBlockEntityAccessor",
+    "printer.mc.BeaconButtonAccessor",
+    "printer.mc.BeaconScreenMixin",
+    "printer.mc.MixinClientLevel",
+    "printer.mc.MixinClientPacketListener",
+    "printer.mc.MixinGui",
+    "printer.mc.MixinLocalPlayer",
+    "printer.mc.MixinMultiPlayerGameMode",
+    "printer.tweakeroo.MixinInputHandler"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

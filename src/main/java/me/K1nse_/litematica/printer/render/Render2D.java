@@ -1,0 +1,817 @@
+package me.K1nse_.litematica.printer.render;
+
+import me.K1nse_.litematica.printer.config.Configs;
+import me.K1nse_.litematica.printer.enums.ScanState;
+import me.K1nse_.litematica.printer.enums.WorkingModeType;
+import me.K1nse_.litematica.printer.handler.HudStatsManager;
+import me.K1nse_.litematica.printer.handler.PrintProgressTracker;
+import me.K1nse_.litematica.printer.handler.ClientPlayerTickManager;
+import me.K1nse_.litematica.printer.handler.Module;
+import me.K1nse_.litematica.printer.handler.Modules;
+import me.K1nse_.litematica.printer.handler.handlers.bedrock.BedrockController;
+import me.K1nse_.litematica.printer.handler.scan.ScanCache;
+import me.K1nse_.litematica.printer.utils.ConfigUtils;
+import me.K1nse_.litematica.printer.utils.render.Render2DUtils;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
+
+import java.awt.*;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 统一的 2D 渲染管理器，负责 HUD 的绘制。
+ * 由 MixinGui 在每帧调用 render() 方法触发。
+ */
+public class Render2D {
+    public static final Render2D INSTANCE = new Render2D();
+
+    private static final int HUD_PADDING = 6;
+    private static final int HUD_LINE_HEIGHT = 12;
+
+    private long cachedHudTick = Long.MIN_VALUE;
+    private float cachedHudWidth = Float.NaN;
+    private float cachedHudHeight = Float.NaN;
+    private int cachedHudX = Integer.MIN_VALUE;
+    private int cachedHudY = Integer.MIN_VALUE;
+    private int cachedHudScale = Integer.MIN_VALUE;
+    private HudLayouts cachedHudLayouts;
+    private long hudStartWallMs;
+    private boolean hudTiming;
+
+    private Render2D() {
+    }
+
+    /**
+     * 主渲染入口，由 Mixin 每帧调用。
+     * 注意：调用前必须已通过 Render2DUtils.initGuiGraphics 或 initMatrix 设置好渲染上下文。
+     */
+    public void render(float scaledWidth, float scaledHeight) {
+        // 确保底层渲染工具已初始化
+        Render2DUtils.ensureInitialized();
+        updateHudDragPosition(scaledWidth, scaledHeight);
+
+//        ItemStack sword = new ItemStack(Items.DIAMOND_SWORD);
+//        sword.setDamageValue(100);
+//        sword.setCount(64);
+
+//        int y = 50;
+//        // 绘制物品图标 + 装饰
+//        Render2DUtils.drawItemWithDecorations(sword, 100, y);
+//        y += 24;
+//        // 如果你只想绘制物品图标本身（不显示数量、耐久条）
+//        Render2DUtils.drawItem(sword, 100, y);
+//        y += 24;
+//        // 绘制方块图标本身
+//        Render2DUtils.drawBlock(Blocks.DIAMOND_BLOCK, 100, y);
+//        y += 24;
+//        // 绘制方块图标，并自动显示数量、耐久条等装饰
+//        Render2DUtils.drawBlockWithDecorations(Blocks.CHEST, 100, y);
+//        y += 24;
+//        // 组合方法
+//        Render2DUtils.drawItemWithLabel(sword, 100, y, sword.getItemName().getString(), Color.WHITE, true);
+
+        if (Configs.Core.RENDER_HUD.getBooleanValue()) {
+            drawHudInfo(scaledWidth, scaledHeight);
+        }
+    }
+
+    public void renderHudPreview(float scaledWidth, float scaledHeight) {
+        Render2DUtils.ensureInitialized();
+        drawHudInfo(scaledWidth, scaledHeight, true);
+    }
+
+    // ==================== HUD 拖动 ====================
+
+    private static boolean hudDragging;
+    private static double dragStartMouseX;
+    private static double dragStartMouseY;
+    private static int dragStartHudX;
+    private static int dragStartHudY;
+
+    /** 按住热键开始拖动：记录起始鼠标位置与 HUD 位置，之后按相对偏移移动 */
+    public static void startHudDrag() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        hudDragging = true;
+        double guiScale = mc.getWindow().getGuiScale();
+        dragStartMouseX = mc.mouseHandler.xpos() / guiScale;
+        dragStartMouseY = mc.mouseHandler.ypos() / guiScale;
+        dragStartHudX = Configs.Core.RENDER_HUD_X.getIntegerValue();
+        dragStartHudY = Configs.Core.RENDER_HUD_Y.getIntegerValue();
+    }
+
+    /** 松开热键：结束拖动并保存配置 */
+    public static void stopHudDrag() {
+        if (!hudDragging) {
+            return;
+        }
+        hudDragging = false;
+        ((fi.dy.masa.malilib.config.ConfigManager) fi.dy.masa.malilib.config.ConfigManager.getInstance()).saveAllConfigs();
+    }
+
+    private void updateHudDragPosition(float scaledWidth, float scaledHeight) {
+        if (!hudDragging) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        double guiScale = mc.getWindow().getGuiScale();
+        double mouseX = mc.mouseHandler.xpos() / guiScale;
+        double mouseY = mc.mouseHandler.ypos() / guiScale;
+        int x = dragStartHudX + (int) Math.round(mouseX - dragStartMouseX);
+        int y = dragStartHudY + (int) Math.round(mouseY - dragStartMouseY);
+        x = Math.max(0, Math.min(x, (int) scaledWidth - 60));
+        y = Math.max(0, Math.min(y, (int) scaledHeight - 40));
+        Configs.Core.RENDER_HUD_X.setIntegerValue(x);
+        Configs.Core.RENDER_HUD_Y.setIntegerValue(y);
+    }
+
+    // ==================== HUD 进度条等信息绘制 ====================
+
+    private void drawHudInfo(float scaledWidth, float scaledHeight) {
+        this.drawHudInfo(scaledWidth, scaledHeight, false);
+    }
+
+    private void drawHudInfo(float scaledWidth, float scaledHeight, boolean forceRefresh) {
+        int centerX = (int) (scaledWidth / 2);
+        int centerY = (int) (scaledHeight / 2);
+
+        // 延迟过大警告
+        if (Configs.Core.LAG_CHECK.getBooleanValue() &&
+                ClientPlayerTickManager.getPacketTick() > Configs.Core.LAG_CHECK_MAX.getIntegerValue()) {
+            Render2DUtils.drawString("延迟过大，已暂停运行", centerX, centerY - 22, Color.ORANGE, true, true);
+        }
+
+        HudLayouts layouts = this.getHudLayouts(scaledWidth, scaledHeight, forceRefresh);
+        drawProgressInfo(centerX, centerY);
+    }
+    private void drawProgressInfo(int centerX, int centerY) {
+        if (!Configs.Core.RENDER_HUD.getBooleanValue()) {
+            return;
+        }
+        // 收集激活模式
+        List<HudStatsManager.Mode> active = new ArrayList<>();
+        if (ConfigUtils.isPrintMode()) active.add(HudStatsManager.Mode.PRINT);
+        if (ConfigUtils.isMineMode()) active.add(HudStatsManager.Mode.MINE);
+        if (ConfigUtils.isFillMode()) active.add(HudStatsManager.Mode.FILL);
+        if (ConfigUtils.isFluidMode()) active.add(HudStatsManager.Mode.FLUID);
+        if (ConfigUtils.isBedrockMode()) active.add(HudStatsManager.Mode.BEDROCK);
+        if (active.isEmpty()) {
+            this.hudTiming = false;
+            return;
+        }
+        // 计时：从首次激活开始累计
+        long now = System.currentTimeMillis();
+        if (!this.hudTiming) {
+            this.hudStartWallMs = now;
+            this.hudTiming = true;
+        }
+        long elapsedSec = Math.max(0L, (now - this.hudStartWallMs) / 1000L);
+
+        Minecraft mc = Minecraft.getInstance();
+        int baseX = Configs.Core.RENDER_HUD_X.getIntegerValue();
+        int baseY = Configs.Core.RENDER_HUD_Y.getIntegerValue();
+        float scale = getHudScale();
+        int padding = Math.max(1, Math.round(6 * scale));
+        int lineStep = Math.max(1, Math.round(12 * scale));
+
+        // 行内容 + 每模式的进度条
+        List<String> lines = new ArrayList<>();
+        List<Double> bars = new ArrayList<>();
+        lines.add("[Litematica Printer]");
+        for (HudStatsManager.Mode mode : active) {
+            long total;
+            long finished;
+            double progress;
+            if (mode == HudStatsManager.Mode.BEDROCK) {
+                // 破基岩进度来自 BedrockController（与 PrintProgressTracker 无关）
+                BedrockController.HudSnapshot bedrock = BedrockController.getHudSnapshot();
+                total = bedrock.submittedTargets();
+                finished = bedrock.confirmedSuccesses();
+                progress = total > 0 ? (double) finished / (double) total : 0.0D;
+            } else {
+                total = PrintProgressTracker.INSTANCE.getTotal(mode);
+                finished = PrintProgressTracker.INSTANCE.getFinished(mode);
+                progress = PrintProgressTracker.INSTANCE.getProgress(mode);
+            }
+            if (total <= 0) {
+                bars.add(-1.0D);
+                lines.add(getModeDisplayName(mode) + "  无目标");
+                continue;
+            }
+            bars.add(progress);
+            lines.add(getModeDisplayName(mode) + "  " + Math.round(progress * 100) + "% (" + finished + "/" + total + ")");
+        }
+        // 汇总：速度 / 耗时 / 预计剩余 / 材料
+        double rate = 0.0D;
+        long totalAll = 0L;
+        long finishedAll = 0L;
+        for (HudStatsManager.Mode mode : active) {
+            rate += HudStatsManager.INSTANCE.snapshot(mode).completedRatePerSecond();
+            totalAll += PrintProgressTracker.INSTANCE.getTotal(mode);
+            finishedAll += PrintProgressTracker.INSTANCE.getFinished(mode);
+        }
+        long remainingSec = rate > 0.01D && totalAll > finishedAll
+                ? (long) ((totalAll - finishedAll) / rate) : -1L;
+        lines.add("速度  " + formatRate(rate) + "/秒");
+        lines.add("耗时  " + formatDuration(elapsedSec));
+        lines.add("预计剩余  " + (remainingSec >= 0L ? formatDuration(remainingSec) : "--"));
+        int[] mats = countMaterials();
+        lines.add("材料  背包 " + mats[0] + " 方块 · 潜影盒 " + mats[1]);
+
+        // 面板尺寸
+        int maxWidth = 0;
+        for (String line : lines) {
+            maxWidth = Math.max(maxWidth, mc.font.width(line));
+        }
+        int baseWidth = maxWidth + padding * 2;
+        int barGap = Math.max(3, Math.round(6 * scale));        // 模式行内进度条占位
+        int modeRowH = lineStep + barGap;
+        int summaryRows = lines.size() - 1 - active.size();
+        int baseHeight = lineStep + active.size() * modeRowH + summaryRows * lineStep + padding * 2;
+
+        // 绘制圆角面板（分段填充 + 四角抗锯齿渐变，无重叠 → 半透明背景不出现色斑）
+        int radius = Math.max(3, Math.round(4 * scale));
+        fillRoundedRect(baseX, baseY, baseWidth, baseHeight, radius, new Color(0, 0, 0, 140));
+        // 拖动模式：黄色高亮边框
+        if (hudDragging) {
+            Render2DUtils.fill(baseX - 1, baseY - 1, baseX + baseWidth + 1, baseY, new Color(255, 220, 0, 255));
+            Render2DUtils.fill(baseX - 1, baseY + baseHeight, baseX + baseWidth + 1, baseY + baseHeight + 1, new Color(255, 220, 0, 255));
+            Render2DUtils.fill(baseX - 1, baseY, baseX, baseY + baseHeight, new Color(255, 220, 0, 255));
+            Render2DUtils.fill(baseX + baseWidth, baseY, baseX + baseWidth + 1, baseY + baseHeight, new Color(255, 220, 0, 255));
+        }
+        int ty = baseY + padding;
+        // 标题（绿色）
+        Render2DUtils.drawStringScaled(lines.get(0), baseX + padding, ty, new Color(120, 255, 120, 255), true, scale);
+        ty += lineStep;
+        // 模式行 + 进度条（黄色，与下一行拉开间距）
+        int barIndex = 0;
+        for (int i = 1; i <= active.size(); i++) {
+            Render2DUtils.drawStringScaled(lines.get(i), baseX + padding, ty, Color.WHITE, true, scale);
+            double prog = bars.get(barIndex++);
+            if (prog >= 0.0D) {
+                int barX = baseX + padding;
+                int barW = Math.max(20, baseWidth - padding * 2);
+                int barH = Math.max(2, Math.round(3 * scale));
+                int barY = ty + lineStep + Math.max(1, Math.round(2 * scale));
+                Render2DUtils.fill(barX, barY, barX + barW, barY + barH, new Color(255, 255, 255, 60));
+                Render2DUtils.fill(barX, barY, barX + (int) (barW * clamp(prog, 0.0D, 1.0D)), barY + barH, new Color(255, 220, 0, 255));
+            }
+            ty += modeRowH;
+        }
+        // 汇总行（浅蓝）
+        for (int i = 1 + active.size(); i < lines.size(); i++) {
+            Render2DUtils.drawStringScaled(lines.get(i), baseX + padding, ty, new Color(200, 220, 255, 255), true, scale);
+            ty += lineStep;
+        }
+    }
+
+    /** 圆角矩形：中心/四边分段填充 + 四角逐像素抗锯齿（按覆盖率渐变 alpha，过渡平滑无锯齿） */
+    private void fillRoundedRect(int x, int y, int w, int h, int r, Color color) {
+        int r2 = Math.max(2, Math.min(r, Math.min(w / 2, h / 2)));
+        int baseAlpha = color.getAlpha();
+        // 中心
+        Render2DUtils.fill(x + r2, y + r2, x + w - r2, y + h - r2, color);
+        // 四边
+        Render2DUtils.fill(x + r2, y, x + w - r2, y + r2, color);          // 顶
+        Render2DUtils.fill(x + r2, y + h - r2, x + w - r2, y + h, color);  // 底
+        Render2DUtils.fill(x, y + r2, x + r2, y + h - r2, color);          // 左
+        Render2DUtils.fill(x + w - r2, y + r2, x + w, y + h - r2, color);  // 右
+        // 四角：角部 r×r 区域逐像素，圆内全 alpha、边界按覆盖率渐变（抗锯齿）
+        double cx = r2 - 0.5;
+        double inner = r2 - 1.0;
+        for (int j = 0; j < r2; j++) {
+            for (int i = 0; i < r2; i++) {
+                double dx = i + 0.5 - cx;
+                double dy = j + 0.5 - cx;
+                double dist = Math.sqrt(dx * dx + dy * dy);
+                double cov;
+                if (dist <= inner) {
+                    cov = 1.0;
+                } else if (dist >= r2) {
+                    continue;
+                } else {
+                    cov = r2 - dist;
+                }
+                int a = (int) Math.round(baseAlpha * Math.max(0.0, Math.min(1.0, cov)));
+                if (a <= 0) {
+                    continue;
+                }
+                Color corner = new Color(color.getRed(), color.getGreen(), color.getBlue(), a);
+                // 左上
+                Render2DUtils.fill(x + i, y + j, x + i + 1, y + j + 1, corner);
+                // 右上
+                Render2DUtils.fill(x + w - 1 - i, y + j, x + w - i, y + j + 1, corner);
+                // 左下
+                Render2DUtils.fill(x + i, y + h - 1 - j, x + i + 1, y + h - j, corner);
+                // 右下
+                Render2DUtils.fill(x + w - 1 - i, y + h - 1 - j, x + w - i, y + h - j, corner);
+            }
+        }
+    }
+
+    private String formatDuration(long sec) {
+        long hours = sec / 3600L;
+        long minutes = (sec % 3600L) / 60L;
+        long seconds = sec % 60L;
+        if (hours > 0L) {
+            return hours + "小时" + minutes + "分";
+        }
+        if (minutes > 0L) {
+            return minutes + "分" + seconds + "秒";
+        }
+        return seconds + "秒";
+    }
+
+    /** 统计背包里的方块数量与潜影盒数量（材料余量） */
+    private int[] countMaterials() {
+        int blocks = 0;
+        int shulkers = 0;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) {
+            for (int i = 0; i < 36; i++) {
+                ItemStack stack = mc.player.getInventory().getItem(i);
+                if (stack.isEmpty()) {
+                    continue;
+                }
+                if (stack.getItem() instanceof BlockItem blockItem) {
+                    if (blockItem.getBlock() instanceof ShulkerBoxBlock) {
+                        shulkers += stack.getCount();
+                    } else {
+                        blocks += stack.getCount();
+                    }
+                }
+            }
+        }
+        return new int[]{blocks, shulkers};
+    }
+
+    private int drawHudPanel(PanelLayout layout) {
+        if (layout.lines().isEmpty()) {
+            return layout.drawY();
+        }
+
+        //#if MC >= 12111
+        int padding = Math.max(1, Math.round(HUD_PADDING * layout.scale()));
+        int lineStep = Math.max(1, Math.round(HUD_LINE_HEIGHT * layout.scale()));
+        int panelHeight = Math.max(1, Math.round(layout.baseHeight() * layout.scale()));
+        Render2DUtils.fill(
+                layout.drawX(),
+                layout.drawY(),
+                layout.drawX() + layout.scaledWidth(),
+                layout.drawY() + panelHeight,
+                new Color(0, 0, 0, 110)
+        );
+
+        int textX = layout.drawX() + padding;
+        int lineY = layout.drawY() + padding;
+        for (HudLine line : layout.lines()) {
+            Render2DUtils.drawStringScaled(line.text(), textX, lineY, line.color(), true, layout.scale());
+            lineY += lineStep;
+        }
+        return layout.drawY() + panelHeight;
+        //#else
+        //$$ Render2DUtils.pushPose();
+        //$$ Render2DUtils.translate(layout.drawX(), layout.drawY(), 0.0D);
+        //$$ Render2DUtils.scale(layout.scale(), layout.scale(), 1.0F);
+        //$$ Render2DUtils.fill(0, 0, layout.baseWidth(), layout.baseHeight(), new Color(0, 0, 0, 110));
+        //$$
+        //$$ int lineY = HUD_PADDING;
+        //$$ for (HudLine line : layout.lines()) {
+        //$$     Render2DUtils.drawString(line.text(), HUD_PADDING, lineY, line.color(), true);
+        //$$     lineY += HUD_LINE_HEIGHT;
+        //$$ }
+        //$$ Render2DUtils.popPose();
+        //$$ return layout.bottom();
+        //#endif
+    }
+
+    private PanelLayout computeHudPanelLayout(int x, int y, List<HudLine> lines, float scaledWidth, float scaledHeight, float scale) {
+        if (lines.isEmpty()) {
+            return new PanelLayout(lines, x, y, 0, 0, 0, 0, scale);
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        int maxWidth = 0;
+        for (HudLine line : lines) {
+            maxWidth = Math.max(maxWidth, mc.font.width(line.text()));
+        }
+
+        int baseWidth = maxWidth + HUD_PADDING * 2;
+        int baseHeight = lines.size() * HUD_LINE_HEIGHT + HUD_PADDING * 2;
+        //#if MC >= 12111
+        int scaledWidthPixels = Math.max(1, Math.round(baseWidth * scale));
+        int scaledHeightPixels = Math.max(1, Math.round(baseHeight * scale));
+        //#else
+        //$$ int scaledWidthPixels = Math.max(1, Math.round(baseWidth * scale));
+        //$$ int scaledHeightPixels = Math.max(1, Math.round(baseHeight * scale));
+        //#endif
+        int drawX = Math.max(0, Math.min(x, (int) scaledWidth - scaledWidthPixels));
+        int drawY = Math.max(0, Math.min(y, (int) scaledHeight - scaledHeightPixels));
+        return new PanelLayout(lines, drawX, drawY, baseWidth, baseHeight, scaledWidthPixels, scaledHeightPixels, scale);
+    }
+
+    public HudBounds getHudBounds(float scaledWidth, float scaledHeight) {
+        HudLayouts layouts = this.getHudLayouts(scaledWidth, scaledHeight, false);
+        PanelLayout summaryLayout = layouts.summary();
+        PanelLayout modeLayout = layouts.modes();
+
+        if (summaryLayout.lines().isEmpty()) {
+            return new HudBounds(modeLayout.drawX(), modeLayout.drawY(), modeLayout.scaledWidth(), modeLayout.scaledHeight());
+        }
+        if (modeLayout.lines().isEmpty()) {
+            return new HudBounds(summaryLayout.drawX(), summaryLayout.drawY(), summaryLayout.scaledWidth(), summaryLayout.scaledHeight());
+        }
+
+        int minX = Math.min(summaryLayout.drawX(), modeLayout.drawX());
+        int minY = Math.min(summaryLayout.drawY(), modeLayout.drawY());
+        int maxX = Math.max(summaryLayout.right(), modeLayout.right());
+        int maxY = Math.max(summaryLayout.bottom(), modeLayout.bottom());
+        return new HudBounds(minX, minY, Math.max(0, maxX - minX), Math.max(0, maxY - minY));
+    }
+
+    private HudLayouts getHudLayouts(float scaledWidth, float scaledHeight, boolean forceRefresh) {
+        int baseX = Configs.Core.RENDER_HUD_X.getIntegerValue();
+        int baseY = Configs.Core.RENDER_HUD_Y.getIntegerValue();
+        int scaleConfig = Configs.Core.RENDER_HUD_SCALE.getIntegerValue();
+        long tick = ClientPlayerTickManager.getCurrentHandlerTime();
+        if (!forceRefresh
+                && this.cachedHudLayouts != null
+                && this.cachedHudTick == tick
+                && Float.compare(this.cachedHudWidth, scaledWidth) == 0
+                && Float.compare(this.cachedHudHeight, scaledHeight) == 0
+                && this.cachedHudX == baseX
+                && this.cachedHudY == baseY
+                && this.cachedHudScale == scaleConfig) {
+            return this.cachedHudLayouts;
+        }
+
+        float hudScale = getHudScale();
+        PanelLayout summary = computeHudPanelLayout(
+                baseX,
+                baseY,
+                buildHudSummaryLines(),
+                scaledWidth,
+                scaledHeight,
+                hudScale
+        );
+        PanelLayout modes = computeHudPanelLayout(
+                baseX,
+                summary.bottom() + Math.max(4, Math.round(6 * hudScale)),
+                buildHudModeLines(),
+                scaledWidth,
+                scaledHeight,
+                hudScale
+        );
+        this.cachedHudTick = tick;
+        this.cachedHudWidth = scaledWidth;
+        this.cachedHudHeight = scaledHeight;
+        this.cachedHudX = baseX;
+        this.cachedHudY = baseY;
+        this.cachedHudScale = scaleConfig;
+        this.cachedHudLayouts = new HudLayouts(summary, modes);
+        return this.cachedHudLayouts;
+    }
+
+    private List<HudLine> buildHudSummaryLines() {
+        List<HudLine> lines = new ArrayList<>();
+        boolean enabled = ConfigUtils.isEnable();
+        String workMode = ((WorkingModeType) Configs.Core.WORK_MODE.getOptionListValue()).equals(WorkingModeType.SINGLE) ? "单模" : "多模";
+        lines.add(new HudLine("工作: " + (enabled ? "运行中" : "已关闭") + " | 模式: " + workMode + " | 功能: " + getActiveModeSummary(), new Color(255, 255, 255, 255)));
+
+        String pauseReason = ClientPlayerTickManager.getLastPauseReason();
+        if (!enabled) {
+            lines.add(new HudLine("调度: 已关闭", new Color(255, 204, 102, 255)));
+        } else if (pauseReason != null) {
+            lines.add(new HudLine("调度: 暂停 | 原因: " + humanizeSchedulerReason(pauseReason), new Color(255, 180, 90, 255)));
+        } else {
+            lines.add(new HudLine("调度: 运行中 | Tick: " + ClientPlayerTickManager.getCurrentHandlerTime(), new Color(180, 255, 180, 255)));
+        }
+        return lines;
+    }
+
+    private List<HudLine> buildHudModeLines() {
+        List<HudLine> lines = new ArrayList<>();
+        appendCommonModeLines(lines, HudStatsManager.Mode.PRINT, getModeDisplayName(HudStatsManager.Mode.PRINT), ConfigUtils.isPrintMode());
+        appendCommonModeLines(lines, HudStatsManager.Mode.MINE, getModeDisplayName(HudStatsManager.Mode.MINE), ConfigUtils.isMineMode());
+        appendCommonModeLines(lines, HudStatsManager.Mode.FILL, getModeDisplayName(HudStatsManager.Mode.FILL), ConfigUtils.isFillMode());
+        appendCommonModeLines(lines, HudStatsManager.Mode.FLUID, getModeDisplayName(HudStatsManager.Mode.FLUID), ConfigUtils.isFluidMode());
+        appendBedrockLines(lines, ConfigUtils.isBedrockMode());
+        return lines;
+    }
+
+    private void appendCommonModeLines(List<HudLine> lines, HudStatsManager.Mode mode, String label, boolean active) {
+        if (!active) {
+            return;
+        }
+        HudStatsManager.Snapshot snapshot = HudStatsManager.INSTANCE.snapshot(mode);
+        double actualRate = getDisplayedModeRate(mode, snapshot);
+        String status = humanizeCommonModeReason(mode, snapshot, actualRate);
+        StringBuilder text = new StringBuilder("[").append(label).append("] ");
+        if (shouldDisplayModeRate(mode)) {
+            text.append(getModeRateLabel(mode)).append(' ').append(formatRate(actualRate)).append("/s | ");
+        }
+        Module module = getModule(mode);
+        text.append("设置 ").append(formatModeSettings(mode));
+        if (module != null) {
+            text.append(" | 扫描 ").append(formatScanState(module));
+        }
+        text.append(" | 状态 ").append(status);
+        lines.add(new HudLine(text.toString(), new Color(120, 220, 255, 255)));
+    }
+
+    private void appendBedrockLines(List<HudLine> lines, boolean active) {
+        if (!active) {
+            return;
+        }
+        HudStatsManager.Snapshot snapshot = HudStatsManager.INSTANCE.snapshot(HudStatsManager.Mode.BEDROCK);
+        BedrockController.HudSnapshot bedrock = BedrockController.getHudSnapshot();
+        String progressText = formatProgress(
+                bedrock.confirmedSuccesses(),
+                bedrock.submittedTargets(),
+                bedrock.submittedTargets() > 0
+                        ? (double) bedrock.confirmedSuccesses() / (double) bedrock.submittedTargets()
+                        : 0.0D
+        );
+        int totalFailures = bedrock.failedTargets() + bedrock.stuckTargets();
+        String status = humanizeBedrockReason(bedrock.lastReason());
+        if (bedrock.totalTargets() <= 0 && bedrock.submittedTargets() <= 0 && "运行中".equals(status)) {
+            status = "无目标";
+        }
+
+        lines.add(new HudLine("[破基岩] 进度 " + progressText
+                + " | 成功率 " + formatPercent(bedrock.successRate())
+                + " | 成功速率 " + formatRate(snapshot.ratePerSecond()) + "/s", new Color(120, 255, 170, 255)));
+        lines.add(new HudLine("成功 " + bedrock.confirmedSuccesses()
+                + " | 失败 " + totalFailures
+                + " | 垂直 " + bedrock.verticalActiveTargets() + "/" + bedrock.verticalActiveCap()
+                + " | 水平 " + bedrock.sideTargets() + "/" + bedrock.sideCap()
+                + " | 清理 " + bedrock.cleanupQueueSize()
+                + " | 压力 " + bedrock.cleanupPressure(), new Color(255, 255, 255, 255)));
+        lines.add(new HudLine("吞吐 " + bedrock.configuredThroughput()
+                + " | 提交 " + bedrock.acceptedThisTick() + "/" + bedrock.submitCap()
+                + " | 阻塞 " + bedrock.rejectedThisTick()
+                + " | 扫描 " + formatScanState(Modules.BEDROCK)
+                + " | 状态 " + status, new Color(255, 255, 255, 255)));
+    }
+
+    private void drawProgressBar(int x, int y, int barWidth, int barHeight, double progress,
+                                 Color bgColor, Color fgColor) {
+        double clampedProgress = clamp(progress, 0.0, 1.0);
+        int barXStart = x - (barWidth / 2);
+        int barXEnd = x + (barWidth / 2);
+        int barYEnd = y + barHeight;
+        int filledWidth = (int) (clampedProgress * barWidth);
+
+        Render2DUtils.fill(barXStart, y, barXEnd, barYEnd, bgColor);
+        if (filledWidth > 0) {
+            Render2DUtils.fill(barXStart, y, barXStart + filledWidth, barYEnd, fgColor);
+        }
+    }
+
+    private String getActiveModeSummary() {
+        if (!ConfigUtils.isEnable()) {
+            return "无";
+        }
+        List<String> names = new ArrayList<>();
+        if (ConfigUtils.isPrintMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.PRINT));
+        }
+        if (ConfigUtils.isMineMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.MINE));
+        }
+        if (ConfigUtils.isFillMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.FILL));
+        }
+        if (ConfigUtils.isFluidMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.FLUID));
+        }
+        if (ConfigUtils.isBedrockMode()) {
+            names.add(getModeDisplayName(HudStatsManager.Mode.BEDROCK));
+        }
+        return names.isEmpty() ? "无" : String.join(", ", names);
+    }
+
+    private String getModeDisplayName(HudStatsManager.Mode mode) {
+        return switch (mode) {
+            case PRINT -> "打印";
+            case MINE -> "挖掘";
+            case FILL -> "填充";
+            case FLUID -> "排流体";
+            case BEDROCK -> "破基岩";
+            case TOTAL -> "总计";
+        };
+    }
+
+    private String formatProgress(long finished, long total, double progress) {
+        if (total <= 0) {
+            return "--";
+        }
+        return formatPercent(progress) + " (" + finished + "/" + total + ")";
+    }
+
+    private String formatRate(double rate) {
+        long tenths = Math.max(0L, Math.round(rate * 10.0D));
+        return tenths / 10L + "." + tenths % 10L;
+    }
+
+    private String formatPercent(double value) {
+        return (int) Math.round(clamp(value, 0.0D, 1.0D) * 100.0D) + "%";
+    }
+
+    private float getHudScale() {
+        return (float) clamp(Configs.Core.RENDER_HUD_SCALE.getIntegerValue() / 100.0D, 0.5D, 2.0D);
+    }
+
+    private String humanizeSchedulerReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "运行中";
+        }
+        if (reason.startsWith("shared_precheck")) {
+            return "容器打开或切物品中";
+        }
+        if (reason.startsWith("handler_precheck")) {
+            return "共享前置阻塞";
+        }
+        if (reason.startsWith("send_queue_wait_modify_look") || reason.startsWith("action_wait_modify_look")) {
+            return "等待转头";
+        }
+        if (reason.startsWith("lag_check")) {
+            return "延迟过大";
+        }
+        return reason;
+    }
+
+    private boolean shouldDisplayModeRate(HudStatsManager.Mode mode) {
+        return mode == HudStatsManager.Mode.PRINT
+                || mode == HudStatsManager.Mode.MINE
+                || mode == HudStatsManager.Mode.FILL
+                || mode == HudStatsManager.Mode.FLUID;
+    }
+
+    private double getDisplayedModeRate(HudStatsManager.Mode mode, HudStatsManager.Snapshot snapshot) {
+        return switch (mode) {
+            case PRINT -> snapshot.completedRatePerSecond();
+            case MINE, FILL, FLUID -> snapshot.completedRatePerSecond();
+            default -> 0.0D;
+        };
+    }
+
+    private String getModeRateLabel(HudStatsManager.Mode mode) {
+        return switch (mode) {
+            case PRINT, FILL, FLUID -> "放置";
+            case MINE -> "破坏";
+            case BEDROCK -> "成功";
+            case TOTAL -> "速率";
+        };
+    }
+
+    private Module getModule(HudStatsManager.Mode mode) {
+        return switch (mode) {
+            case PRINT -> Modules.PRINT;
+            case MINE -> Modules.MINE;
+            case FILL -> Modules.FILL;
+            case FLUID -> Modules.FLUID;
+            case BEDROCK -> Modules.BEDROCK;
+            case TOTAL -> null;
+        };
+    }
+
+    private String formatScanState(Module module) {
+        ScanState state = module.getScanState();
+        String text = switch (state) {
+            case FULL -> "全量";
+            case PARTIAL -> "局部";
+            case LAZY -> module.getPendingIterationWorkCount() > 0 ? "前沿" : "惰性";
+        };
+        int dirtyRegions = module.getPendingDirtyRegionCount();
+        if (dirtyRegions > 0) {
+            text += "(" + dirtyRegions + ")";
+        }
+        ScanCache.ScanMetrics metrics = ScanCache.INSTANCE.metricsFor(module.getId());
+        if (metrics.hasActivity()) {
+            text += " " + formatScanMillis(metrics.scanNanos())
+                    + "ms " + metrics.scannedBlocks()
+                    + "块/" + metrics.scannedSections()
+                    + "区 " + metrics.acceptedTargets() + "目标";
+            if (metrics.budgetPauses() > 0) {
+                text += " 切片" + metrics.budgetPauses();
+            }
+        }
+        return text;
+    }
+
+    private String formatScanMillis(long scanNanos) {
+        long hundredths = Math.max(0L, (scanNanos + 5_000L) / 10_000L);
+        long whole = hundredths / 100L;
+        long fraction = hundredths % 100L;
+        return whole + "." + (fraction < 10L ? "0" : "") + fraction;
+    }
+
+    private String humanizeCommonModeReason(HudStatsManager.Mode mode, HudStatsManager.Snapshot snapshot, double actualRate) {
+        String reason = snapshot.lastReason();
+        if (reason == null || reason.isBlank() || "空闲".equals(reason)) {
+            return actualRate > 0.0D ? "工作中" : "无目标";
+        }
+        if (snapshot.total() <= 0
+                && actualRate <= 0.0D
+                && !reason.contains("缺少")
+                && !reason.contains("配置")
+                && !reason.contains("列表为空")
+                && !reason.contains("列表无匹配")
+                && !reason.contains("失败")) {
+            return "无目标";
+        }
+        if (reason.contains("失败")) {
+            return "失败";
+        }
+        if (reason.contains("配置") || reason.contains("列表为空") || reason.contains("列表无匹配")) {
+            return "未配置";
+        }
+        if (reason.contains("缺少") || reason.contains("主手无可填充方块")) {
+            return "缺少方块";
+        }
+        if ("运行中".equals(reason) && snapshot.total() <= 0 && actualRate <= 0.0D) {
+            return "无目标";
+        }
+        return "工作中";
+    }
+
+    private String formatModeSettings(HudStatsManager.Mode mode) {
+        return switch (mode) {
+            case PRINT, FILL, FLUID -> Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue()
+                    + "/t 间隔" + Configs.Placement.PLACE_INTERVAL.getIntegerValue();
+            case MINE -> "不限速";
+            case BEDROCK -> Configs.Bedrock.BEDROCK_BLOCKS_PER_TICK.getIntegerValue()
+                    + "/t 间隔" + Configs.Bedrock.BEDROCK_INTERVAL.getIntegerValue();
+            case TOTAL -> "--";
+        };
+    }
+
+    private String humanizeBedrockReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "运行中";
+        }
+        return switch (reason) {
+            case "idle" -> "空闲";
+            case "running", "accepted" -> "运行中";
+            case "startup_serial" -> "启动串行";
+            case "accept_backpressure" -> "接受背压";
+            case "submit_cap" -> "提交上限";
+            case "active_cap" -> "活跃上限";
+            case "side_disabled" -> "水平通道关闭";
+            case "side_lane_busy" -> "水平通道占用";
+            case "retry_cooldown" -> "重试冷却";
+            case "reserved_by_active_target" -> "被活跃任务占位";
+            case "out_of_range_bedrock", "out_of_range_machine", "out_of_range" -> "超出交互范围";
+            case "await_target_exposure" -> "等待目标暴露";
+            case "duplicate_active_target" -> "重复目标";
+            case "occupied_by_active_piston" -> "活塞占位";
+            case "pending_cleanup" -> "等待清理";
+            case "machine_overlap" -> "机器重叠";
+            case "target_failed_on_create", "failed" -> "任务失败";
+            case "stuck" -> "任务卡死";
+            default -> reason;
+        };
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private record HudLine(String text, Color color) {
+    }
+
+    private record PanelLayout(
+            List<HudLine> lines,
+            int drawX,
+            int drawY,
+            int baseWidth,
+            int baseHeight,
+            int scaledWidth,
+            int scaledHeight,
+            float scale
+    ) {
+        private int right() {
+            return this.drawX + this.scaledWidth;
+        }
+
+        private int bottom() {
+            return this.drawY + this.scaledHeight;
+        }
+    }
+
+    private record HudLayouts(PanelLayout summary, PanelLayout modes) {
+    }
+
+    public record HudBounds(int x, int y, int width, int height) {
+        public boolean contains(double mouseX, double mouseY) {
+            return mouseX >= this.x && mouseX <= this.x + this.width
+                    && mouseY >= this.y && mouseY <= this.y + this.height;
+        }
+    }
+}

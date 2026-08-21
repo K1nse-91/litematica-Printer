@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "${mod_wrapper_id}",
+  "version": "${mod_version}",
+  "icon": "assets/${mod_wrapper_id}/icon.png",
+  "name": "${mod_name}",
+  "description": "${mod_description}",
+  "authors": [
+    {
+      "name": "K1nse_",
+      "contact": {
+        "homepage": ""
+      }
+    },
+    {
+      "name": "zhaixianyu",
+      "contact": {
+        "homepage": "https://github.com/zhaixianyu"
+      }
+    },
+    {
+      "name": "BlinkWhite",
+      "contact": {
+        "homepage": "https://github.com/BiliXWhite"
+      }
+    },
+    {
+      "name": "bunnyi116",
+      "contact": {
+        "homepage": "https://github.com/bunnyi116"
+      }
+    }
+  ],
+  "contact": {
+    "homepage": "${mod_homepage}",
+    "issues": "${mod_sources}/issues",
+    "sources": "${mod_sources}"
+  },
+  "license": "${mod_license}",
+  "environment": "*",
+  "entrypoints": {
+  },
+  "depends": {
+    "litematica-printer": "*",
+    "malilib": "*",
+    "litematica": "*",
+    "fabric-api": "*"
+  }
+}

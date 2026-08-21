@@ -1,0 +1,44 @@
+package me.K1nse_.litematica.printer.utils.minecraft;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.block.*;
+import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.NotNull;
+
+public class BlockUtils {
+    public static boolean isReplaceable(BlockState blockState) {
+        //#if MC > 11902
+        return blockState.canBeReplaced();
+        //#else
+        //$$ return blockState.getMaterial().isReplaceable();
+        //#endif
+    }
+
+    public static @NotNull Block getBlock(Identifier blockId) {
+        //#if MC > 12101
+        return BuiltInRegistries.BLOCK.getValue(blockId);
+        //#else
+        //$$ return BuiltInRegistries.BLOCK.get(blockId);
+        //#endif
+    }
+
+    public static String getBlockName(Block block) {
+        return block.getName().getString();
+    }
+
+    public static Identifier getKey(Block block) {
+        return BuiltInRegistries.BLOCK.getKey(block);
+    }
+
+    public static String getKeyString(Block block) {
+        return getKey(block).toString();
+    }
+
+    public static boolean canSupportCenter(LevelReader levelReader, BlockPos blockPos, Direction direction) {
+        return Block.canSupportCenter(levelReader, blockPos, direction);
+    }
+}

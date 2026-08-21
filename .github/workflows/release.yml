@@ -1,0 +1,135 @@
+name: release-version-set
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_release_tag:
+        description: Existing or new GitHub release tag
+        type: string
+        required: true
+      version_set:
+        description: Version set to release
+        type: choice
+        required: true
+        default: lts
+        options:
+          - lts
+          - archive
+          - all
+
+env:
+  IS_THIS_RELEASE: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.target_release_tag }}-${{ inputs.version_set }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      target_versions: ${{ steps.targets.outputs.target_versions }}
+      gradle_tasks: ${{ steps.targets.outputs.gradle_tasks }}
+    steps:
+      - id: targets
+        shell: bash
+        env:
+          VERSION_SET: ${{ inputs.version_set }}
+        run: |
+          if [ "$VERSION_SET" = "archive" ]; then
+            versions=("1.21.3" "1.21.1" "1.20.6" "1.20.4" "1.20.2" "1.20.1" "1.19.4" "1.18.2")
+          elif [ "$VERSION_SET" = "all" ]; then
+            versions=("26.2" "26.1" "1.21.11" "1.21.9" "1.21.6" "1.21.5" "1.21.4" "1.21.3" "1.21.1" "1.20.6" "1.20.4" "1.20.2" "1.20.1" "1.19.4" "1.18.2")
+          else
+            versions=("26.2" "26.1" "1.21.11" "1.21.9" "1.21.6" "1.21.5" "1.21.4")
+          fi
+
+          if [ "$VERSION_SET" = "all" ]; then
+            gradle_tasks=":fabricWrapper:build"
+          else
+            gradle_tasks=""
+            for version in "${versions[@]}"; do
+              gradle_tasks="${gradle_tasks} :${version}:build"
+            done
+            gradle_tasks="${gradle_tasks# }"
+          fi
+
+          target_versions="$(IFS=,; echo "${versions[*]}")"
+          echo "target_versions=${target_versions}" >> "$GITHUB_OUTPUT"
+          echo "gradle_tasks=${gradle_tasks}" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'microsoft'
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ./.gradle
+            ./libs
+          key: ${{ runner.os }}-gradle-release-${{ inputs.version_set }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/*.gradle.kts', '**/gradle.properties', 'buildSrc/**') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-release-${{ inputs.version_set }}-
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build ${{ inputs.version_set }} release set
+        shell: bash
+        env:
+          GRADLE_TASKS: ${{ needs.plan.outputs.gradle_tasks }}
+          TARGET_MC_VERSIONS: ${{ needs.plan.outputs.target_versions }}
+        run: |
+          ./gradlew $GRADLE_TASKS --stacktrace
+
+      - name: Collect release jars
+        shell: bash
+        env:
+          VERSION_SET: ${{ inputs.version_set }}
+          TARGET_MC_VERSIONS: ${{ needs.plan.outputs.target_versions }}
+        run: |
+          rm -rf release-artifacts
+          mkdir -p release-artifacts/version-jars
+
+          if [ "$VERSION_SET" = "all" ]; then
+            find fabricWrapper/build/libs -maxdepth 1 -type f -name "*.jar" ! -name "*-sources.jar" -exec cp {} release-artifacts/ \;
+            find fabricWrapper/build/libs/jars -maxdepth 1 -type f -name "*.jar" ! -name "*-sources.jar" -exec cp {} release-artifacts/version-jars/ \;
+          else
+            IFS=',' read -ra versions <<< "$TARGET_MC_VERSIONS"
+            for version in "${versions[@]}"; do
+              if [ ! -d "versions/${version}/build/libs" ]; then
+                echo "Missing build output for ${version}" >&2
+                exit 1
+              fi
+              find "versions/${version}/build/libs" -maxdepth 1 -type f -name "*.jar" ! -name "*-sources.jar" -exec cp {} release-artifacts/version-jars/ \;
+            done
+          fi
+
+          find release-artifacts -type f -name "*.jar" -print | sort
+
+      - name: Upload jars to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.target_release_tag }}
+          files: release-artifacts/**/*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
