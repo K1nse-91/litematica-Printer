@@ -28,7 +28,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.regex.Pattern;
 
 public class UpdateCheckerUtils {
-    private static final String DEFAULT_REPOSITORY_URL = "https://github.com/Yur1Ca/litematica-printer";
+    private static final String DEFAULT_REPOSITORY_URL = "https://github.com/K1nse-91/litematica-Printer";
     private static final String DOWNLOAD_URL = "https://openlist.hanauta.icu/Minecraft/Litematica-Printer";
     public static final String REPOSITORY_URL = resolveRepositoryUrl();
     private static final String RELEASES_API_URL = resolveReleasesApiUrl(REPOSITORY_URL);
@@ -153,23 +153,23 @@ public class UpdateCheckerUtils {
         try {
             URI uri = URI.create(repositoryUrl);
             if (!"github.com".equalsIgnoreCase(uri.getHost())) {
-                return "https://api.github.com/repos/Yur1Ca/litematica-printer/releases";
+                return "https://api.github.com/repos/K1nse-91/litematica-Printer/releases";
             }
 
             String path = uri.getPath();
             if (path == null || path.isBlank()) {
-                return "https://api.github.com/repos/Yur1Ca/litematica-printer/releases";
+                return "https://api.github.com/repos/K1nse-91/litematica-Printer/releases";
             }
 
             String[] parts = path.replaceFirst("^/", "").split("/");
             if (parts.length < 2 || parts[0].isBlank() || parts[1].isBlank()) {
-                return "https://api.github.com/repos/Yur1Ca/litematica-printer/releases";
+                return "https://api.github.com/repos/K1nse-91/litematica-Printer/releases";
             }
 
             return "https://api.github.com/repos/" + parts[0] + "/" + parts[1].replaceAll("\\.git$", "") + "/releases";
         } catch (Exception exception) {
             Debug.alwaysWrite("Failed to resolve releases API URL from repository URL: " + exception.getMessage());
-            return "https://api.github.com/repos/Yur1Ca/litematica-printer/releases";
+            return "https://api.github.com/repos/K1nse-91/litematica-Printer/releases";
         }
     }
 

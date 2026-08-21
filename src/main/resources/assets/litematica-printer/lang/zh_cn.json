@@ -218,7 +218,7 @@
   "litematica-printer.config.selectionType.litematica.selection.abovePlayer": "投影选区(玩家之上)",
   "litematica-printer.config.selectionType.litematica.selection.belowPlayer": "投影选区(玩家之下)",
   "litematica-printer.config.storeOrderly": "物品有序存放",
-  "litematica-printer.config.storeOrderly.desc": "背包满时，尝试将从快捷潜影盒取出的物品放回原位置；\n1.18.2版本中此功能性能较差(可能导致卡顿)，建议关闭。\n宅闲鱼的代码质量并不是很好，这个功能可能不太好用。",
+  "litematica-printer.config.storeOrderly.desc": "背包满时，尝试将从快捷潜影盒取出的物品放回原位置；\n1.18.2版本中此功能性能较差(可能导致卡顿)，建议关闭。",
   "litematica-printer.config.switchPrinterMode": "切换模式",
   "litematica-printer.config.switchPrinterMode.desc": "切换打印机的当前工作模式(打印/挖掘/破基岩等)。",
   "litematica-printer.config.hudDrag": "更改HUD位置",

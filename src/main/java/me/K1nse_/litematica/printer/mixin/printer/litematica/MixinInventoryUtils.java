@@ -36,7 +36,7 @@ public class MixinInventoryUtils {
     }
 
     /**
-     * @author BlinkWhite
+     * @author K1nse_
      * @reason 去除优先选择目前已选择的槽位
      */
     @Overwrite
