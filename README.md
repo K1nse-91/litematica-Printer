@@ -1,4 +1,4 @@
-# Litematica Printer - K1nse_ 二改版
+# Litematica Printer - K1nse_
 ==================
 
 该模组为 投影(Litematica) 的 Minecraft Fabric 1.18.2 至 26.2 版本添加了自动建造功能。允许玩家通过自动放置周围正确方块来快速还原投影。
