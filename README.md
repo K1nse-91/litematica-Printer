@@ -80,7 +80,7 @@
 > 目前还没有官方的使用教程，但是大部分功能都含有注释可供参考使用。
 
 ## 未支持方块列表
-以下方块由于特殊原因暂未实现，打印机将自动跳过，亦或者是呈现错误的打印状态。如果发现其他方块放置错误，请尝试降低建造速度。若问题依旧存在，请提交 [Issue](https://github.com/Yur1Ca/litematica-printer/issues)。
+以下方块由于特殊原因暂未实现，打印机将自动跳过，亦或者是呈现错误的打印状态。如果发现其他方块放置错误，请尝试降低建造速度。若问题依旧存在，请提交 [Issue](https://github.com/K1nse-91/litematica-Printer/issues)。
 - 头颅，告示牌，旗帜(以及具有16个朝向的任何方块)
 - 装有液体的炼药锅
 - 实体方块（包括但不限于物品展示框、盔甲架、画等等）
@@ -109,13 +109,13 @@
 - `打印机工作间隔`设置过小，导致类似于 Luminol 等有放置速率限制的服务器不会及时响应，请尝试开启`使用数据包打印`功能打印或者调高`打印机工作间隔`。 
 - 某些玄学问题，在开启正版验证的服务器里打印数据交互不正常。可尝试重新登陆游戏账号。（推荐使用[AuthMe](https://modrinth.com/mod/auth-me)模组） 
 
-如果以上方法都无法解决问题，请尝试提交 [Issue](https://github.com/Yur1Ca/litematica-printer/issues) ，开发者会协助您解决问题。
+如果以上方法都无法解决问题，请尝试提交 [Issue](https://github.com/K1nse-91/litematica-Printer/issues) ，开发者会协助您解决问题。
 
 ### 为什么打印机放置的方块是错的？
 
 1. 服务器装有反作弊插件，可能会导致打印机无法模拟看向放置。
 2. 打印机工作间隔设置过小，服务器无法及时响应，导致方块出现错误。属于正常现象，请尝试增大`打印机工作间隔`的值。
-3. 识别算法没有考虑到关于的方块，导致打印机不会正确处理。请提交 [Issue](https://github.com/YUR1Ca/litematica-printer/issues/new?template=%E6%89%93%E5%8D%B0%E6%96%B9%E5%9D%97%E8%AF%B7%E6%B1%82.yml) ，表明什么方块出现错误。
+3. 识别算法没有考虑到关于的方块，导致打印机不会正确处理。请提交 [Issue](https://github.com/K1nse-91/litematica-Printer/issues/new?template=%E6%89%93%E5%8D%B0%E6%96%B9%E5%9D%97%E8%AF%B7%E6%B1%82.yml) ，表明什么方块出现错误。
 
 ### 快捷潜影盒功能无法使用？
 
@@ -124,7 +124,7 @@
 3. 预选栏位填满了潜影盒。须在Litematica设置中设置好`pickBlockableSlots`（快捷选择栏位）值。如图所示：
 ![预设位置](预设位置.png)
 
-快捷潜影盒仍处于测试阶段，可能会有一些问题，如果遇到问题请提交[Issue](https://github.com/YUR1Ca/litematica-printer/issues)。
+快捷潜影盒仍处于测试阶段，可能会有一些问题，如果遇到问题请提交[Issue](https://github.com/K1nse-91/litematica-Printer/issues)。
 
 
 感谢
