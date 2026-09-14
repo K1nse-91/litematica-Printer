@@ -15,6 +15,8 @@ final class QueuedClick {
     final boolean useShift;
     boolean useProtocol;
     final int repeatCount;
+    /** 是否走原版本地预测放置(false = 纯发包，仅打印模式的「纯发包放置」会置 false)。 */
+    final boolean localPrediction;
     @Nullable
     final Vec3 queuedPlayerPosition;
     final long queuedTick;
@@ -22,11 +24,16 @@ final class QueuedClick {
     Item[] expectedItems;
 
     QueuedClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift, int repeatCount) {
+        this(target, side, hitModifier, useShift, repeatCount, true);
+    }
+
+    QueuedClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift, int repeatCount, boolean localPrediction) {
         this.target = target;
         this.side = side;
         this.hitModifier = hitModifier;
         this.useShift = useShift;
         this.repeatCount = Math.max(1, repeatCount);
+        this.localPrediction = localPrediction;
         Minecraft client = Minecraft.getInstance();
         this.queuedPlayerPosition = client.player == null ? null : client.player.position();
         this.queuedTick = client.level == null ? Long.MIN_VALUE : client.level.getGameTime();

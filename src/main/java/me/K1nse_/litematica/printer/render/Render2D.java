@@ -557,6 +557,26 @@ public class Render2D {
                 + " | 阻塞 " + bedrock.rejectedThisTick()
                 + " | 扫描 " + formatScanState(Modules.BEDROCK)
                 + " | 状态 " + status, new Color(255, 255, 255, 255)));
+        lines.add(new HudLine("网络 待确认 " + bedrock.pendingServerUpdates()
+                + " | 退避 " + bedrock.adaptiveBackoffs()
+                + " | 超时 " + bedrock.serverUpdateTimeouts()
+                + " | 最近 " + humanizeBedrockNetworkResult(bedrock.lastNetworkResult()),
+                new Color(200, 220, 255, 255)));
+    }
+
+    private String humanizeBedrockNetworkResult(String result) {
+        if (result == null || result.isBlank()) {
+            return "空闲";
+        }
+        return switch (result) {
+            case "idle" -> "空闲";
+            case "dispatched" -> "等待服务端更新";
+            case "confirmed" -> "已确认";
+            case "late_update" -> "更新迟到";
+            case "retry" -> "重试";
+            case "stuck" -> "卡死回收";
+            default -> result;
+        };
     }
 
     private void drawProgressBar(int x, int y, int barWidth, int barHeight, double progress,

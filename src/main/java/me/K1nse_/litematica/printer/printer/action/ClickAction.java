@@ -1,5 +1,6 @@
 package me.K1nse_.litematica.printer.printer.action;
 
+import me.K1nse_.litematica.printer.config.Configs;
 import me.K1nse_.litematica.printer.printer.ActionManager;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -18,7 +19,9 @@ public class ClickAction extends Action {
 
     @Override
     public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player, @Nullable Item[] expectedItems) {
-        ActionManager.INSTANCE.queueClick(blockPos, side, getSides().get(side), false, this.clickRepeatCount, expectedItems);
+        // 打印模式的「纯发包放置」：只发 UseItemOn 包、不做本地预测
+        boolean localPrediction = !Configs.Print.PRINT_USE_PACKET.getBooleanValue();
+        ActionManager.INSTANCE.queueClick(blockPos, side, getSides().get(side), false, this.clickRepeatCount, expectedItems, localPrediction);
         return this;
     }
 

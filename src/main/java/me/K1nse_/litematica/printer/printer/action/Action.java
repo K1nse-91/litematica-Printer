@@ -227,6 +227,8 @@ public class Action {
     }
 
     public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player, @Nullable Item[] expectedItems) {
+        // 打印模式的「纯发包放置」：只发 UseItemOn 包、不做本地预测
+        boolean localPrediction = !Configs.Print.PRINT_USE_PACKET.getBooleanValue();
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
             ActionManager.INSTANCE.queueClick(
                     blockPos,
@@ -234,7 +236,8 @@ public class Action {
                     getSides().get(side),
                     useShift,
                     1,
-                    expectedItems
+                    expectedItems,
+                    localPrediction
             );
         } else {
             ActionManager.INSTANCE.queueClick(
@@ -243,7 +246,8 @@ public class Action {
                     getSides().get(side),
                     useShift,
                     1,
-                    expectedItems
+                    expectedItems,
+                    localPrediction
             );
         }
         return this;

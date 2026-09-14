@@ -182,6 +182,8 @@ public class BedrockTarget {
                 }
                 this.hasTried = true;
                 this.executeTick = this.tickTimes;
+                // 关键执行包（START→STOP→放置）已完整发出后才开始网络跟踪；跟踪只观察，不阻塞发送
+                this.recordNetworkAttempt();
                 markThroughputAction();
             }
             case UNEXTENDED_WITHOUT_POWER_SOURCE -> {
@@ -537,6 +539,7 @@ public class BedrockTarget {
             return;
         }
         if (hasExceededSyncWaitTimeout()) {
+            this.recordNetworkTimeout();
             Status recoveryStatus = getRecoverablePostExecuteStatus();
             if (recoveryStatus != null) {
                 resetPostExecuteAttempt("sync_timeout_recover", recoveryStatus);
@@ -668,6 +671,7 @@ public class BedrockTarget {
             return Status.RETRACTED;
         }
         if (hasExceededSyncWaitTimeout()) {
+            this.recordNetworkTimeout();
             Status recoveryStatus = getRecoverablePostExecuteStatus();
             if (recoveryStatus != null) {
                 return recoveryStatus;
@@ -751,8 +755,40 @@ public class BedrockTarget {
     private boolean hasExceededSyncWaitTimeout() {
         return this.hasTried
                 && this.executeTick >= 0
-                && this.tickTimes - this.executeTick >= POST_EXECUTE_SYNC_TIMEOUT_TICKS
+                && this.tickTimes - this.executeTick >= postExecuteSyncTimeoutTicks()
                 && (level.getBlockState(this.pistonPos).isAir() || hasPostExecuteSyncResidue());
+    }
+
+    /** 关键执行包已发出：开始跟踪服务端方块更新确认（多人模式下宽限随 RTT 自适应） */
+    public void recordNetworkAttempt() {
+        BedrockController.networkSync().beginAttempt(this.bedrockPos, this.networkFootprint());
+    }
+
+    public int postExecuteSyncTimeoutTicks() {
+        return BedrockController.networkSync().confirmationTimeoutTicks();
+    }
+
+    public void recordNetworkTimeout() {
+        BedrockController.networkSync().recordTimeout(this.bedrockPos);
+    }
+
+    private Set<BlockPos> networkFootprint() {
+        Set<BlockPos> footprint = new LinkedHashSet<>();
+        footprint.add(this.bedrockPos);
+        footprint.add(this.pistonPos);
+        footprint.add(this.headPos);
+        if (this.torchSupportPos != null) {
+            footprint.add(this.torchSupportPos);
+        }
+        BlockPos torchPos = getTorchPos();
+        if (torchPos != null) {
+            footprint.add(torchPos);
+        }
+        if (this.slimePos != null) {
+            footprint.add(this.slimePos);
+        }
+        footprint.addAll(this.tempBlocks);
+        return footprint;
     }
 
     private boolean shouldRestartAfterPostExecuteCollapse() {
@@ -772,7 +808,7 @@ public class BedrockTarget {
         return isPostExecuteCollapsed()
                 && this.executeTick >= 0
                 && this.tickTimes - this.executeTick >= POST_EXECUTE_AIR_SETTLE_TICKS
-                && this.tickTimes - this.executeTick < POST_EXECUTE_SYNC_TIMEOUT_TICKS
+                && this.tickTimes - this.executeTick < postExecuteSyncTimeoutTicks()
                 && hasStablePostExecuteResidue();
     }
 
@@ -970,7 +1006,7 @@ public class BedrockTarget {
         if (state.isAir() || state.is(Blocks.MOVING_PISTON) || state.is(Blocks.PISTON_HEAD)) {
             return false;
         }
-        if (this.hasTried && this.executeTick >= 0 && this.tickTimes - this.executeTick < POST_EXECUTE_SYNC_TIMEOUT_TICKS) {
+        if (this.hasTried && this.executeTick >= 0 && this.tickTimes - this.executeTick < postExecuteSyncTimeoutTicks()) {
             if (state.is(Blocks.PISTON)) {
                 return false;
             }

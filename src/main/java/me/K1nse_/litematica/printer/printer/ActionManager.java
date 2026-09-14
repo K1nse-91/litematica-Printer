@@ -56,13 +56,20 @@ public class ActionManager {
     }
 
     public void queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift, int clickRepeatCount, @Nullable Item[] expectedItems) {
+        this.queueClick(target, side, hitModifier, useShift, clickRepeatCount, expectedItems, true);
+    }
+
+    /**
+     * @param localPrediction 是否走原版本地预测；false = 纯发包放置（仅打印模式的「纯发包放置」传 false）
+     */
+    public void queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift, int clickRepeatCount, @Nullable Item[] expectedItems, boolean localPrediction) {
         if (Configs.Placement.PLACE_INTERVAL.getIntegerValue() != 0) {
             if (this.queuedClick != null) {
                 System.out.println("Was not ready yet.");
                 return;
             }
         }
-        this.queuedClick = new QueuedClick(target, side, hitModifier, useShift, clickRepeatCount);
+        this.queuedClick = new QueuedClick(target, side, hitModifier, useShift, clickRepeatCount, localPrediction);
         this.queuedClick.expectItems(expectedItems);
     }
 
@@ -129,7 +136,7 @@ public class ActionManager {
         if (gameModeExtension != null) {
             BlockHitResult blockHitResult = new BlockHitResult(hitVec, click.side, click.target, false);
             for (int i = 0; i < click.repeatCount; i++) {
-                gameModeExtension.litematica_printer$useItemOn(true, InteractionHand.MAIN_HAND, blockHitResult);
+                gameModeExtension.litematica_printer$useItemOn(click.localPrediction, InteractionHand.MAIN_HAND, blockHitResult);
             }
         }
         if (click.useShift && !wasSneak) {

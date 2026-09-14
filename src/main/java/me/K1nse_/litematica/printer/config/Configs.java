@@ -386,6 +386,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 多人破基岩自适应：按 RTT 与服务端方块更新延迟，延长确认宽限并退避重试
+        public static final ConfigBoolean BEDROCK_MULTIPLAYER_ADAPTIVE = bool("bedrockMultiplayerAdaptive")
+                .defaultValue(true)
+                .build();
+
         public static final ConfigStringList BEDROCK_WHITELIST = stringList("bedrockWhitelist")
                 .build();
 
@@ -393,6 +398,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BEDROCK_INTERVAL,
                 BEDROCK_BLOCKS_PER_TICK,
                 BEDROCK_ALLOW_SIDE,
+                BEDROCK_MULTIPLAYER_ADAPTIVE,
                 BEDROCK_WHITELIST
         );
     }
@@ -411,6 +417,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         // 凭空放置
         public static final ConfigBoolean PLACE_IN_AIR = bool("placeInAir")
                 .defaultValue(true)
+                .build();
+
+        // 纯发包放置(数据包打印):仅打印模式，跳过原版放置流程与本地预测，直接发 UseItemOn 包，
+        // 方块由服务端确认后才出现。可消除本地预测造成的幽灵方块，代价是方块延迟一拍显示。
+        public static final ConfigBoolean PRINT_USE_PACKET = bool("printUsePacket")
+                .defaultValue(false)
                 .build();
 
         // 打印目标排序
@@ -518,6 +530,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_SELECTION_TYPE,
                 EASY_PLACE_PROTOCOL,
                 PLACE_IN_AIR,
+                PRINT_USE_PACKET,
                 PRINT_SORT_TARGETS,
                 PRINT_SORT_SIDES,
                 REPAIR_RAIL_SHAPE,
@@ -547,6 +560,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(SelectionType.LITEMATICA_SELECTION)
                 .build();
 
+        // 挖沟模式：挖掘前先用沙子填充直线选区及两侧紧邻方块中的流体
+        public static final ConfigBoolean MINE_TRENCH_MODE = bool("mineTrenchMode")
+                .defaultValue(false)
+                .build();
+
         // 挖掘模式限制器
         public static final ConfigOptionList EXCAVATE_LIMITER = optionList("excavateLimiter")
                 .defaultValue(ExcavateListMode.CUSTOM)
@@ -570,6 +588,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 MINE_SELECTION_TYPE,          // 挖掘 - 选区类型
+                MINE_TRENCH_MODE,             // 挖掘 - 挖沟模式
                 EXCAVATE_LIMITER,             // 挖掘 - 挖掘模式限制器
                 EXCAVATE_LIMIT,               // 挖掘 - 挖掘模式限制
                 EXCAVATE_WHITELIST,           // 挖掘 - 挖掘白名单

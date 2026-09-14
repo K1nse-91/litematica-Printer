@@ -32,6 +32,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -44,6 +45,9 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     private static final float MINE_FAST_FINISH_PROGRESS = 0.5F;
     @Unique
     private static final float MINE_FAST_FINISH_COMPLETED_PROGRESS = 0.6F;
+    /** 服务端同 tick START+STOP 的破块规则阈值：单刻进度 >= 0.7 时服务端立即判定破坏 */
+    @Unique
+    private static final float SERVER_FAST_BREAK_THRESHOLD = 0.7F;
 
     // @formatter:off
     @Shadow
@@ -71,6 +75,16 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     private BlockPos litematica_printer$lastLoggedInProgressPos;
     @Unique
     private long litematica_printer$lastLoggedInProgressTick = Long.MIN_VALUE;
+    /**
+     * 打印机私有的破坏蓄力状态。
+     * 不使用原版 destroyBlockPos/isDestroying/destroyProgress：玩家未按攻击键时，
+     * 原版每 tick 都会调用 stopDestroyBlock() 把原版破坏状态清零，
+     * 用私有状态可以彻底避免这次中断（也不会有多余的 ABORT 包）。
+     */
+    @Unique
+    private BlockPos litematica_printer$holdPos;
+    @Unique
+    private float litematica_printer$holdProgress;
     @Unique
     private float litematica_printer$hitSoundTicks;
     @Unique
@@ -89,7 +103,22 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     private void litematica_printer$resetDestroyState(LocalPlayer player, BlockPos pos) {
         this.isDestroying = false;
         this.destroyProgress = 0.0F;
+        this.litematica_printer$clearHold(player);
         this.litematica_printer$clearDestroyProgress(player, pos);
+    }
+
+    /** 是否正在对指定位置进行打印机私有蓄力 */
+    @Unique
+    private boolean litematica_printer$hasHold(BlockPos pos) {
+        return pos != null && this.litematica_printer$holdPos != null && pos.equals(this.litematica_printer$holdPos);
+    }
+
+    /** 清空私有蓄力状态（并清掉破坏动画） */
+    @Unique
+    private void litematica_printer$clearHold(LocalPlayer player) {
+        this.litematica_printer$clearDestroyProgress(player, this.litematica_printer$holdPos);
+        this.litematica_printer$holdPos = null;
+        this.litematica_printer$holdProgress = 0.0F;
     }
 
     @Unique
@@ -262,6 +291,24 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
 
     // @formatter:on
 
+    /** 探针：原版在按住攻击键（或未按住）时的破坏处理是否干扰了打印机的蓄力目标 */
+    @Inject(at = @At("HEAD"), method = "stopDestroyBlock")
+    public void litematica_printer$probeStopDestroy(CallbackInfo ci) {
+        if (this.isDestroying) {
+            MineDebugLog.write("vanilla stopDestroyBlock holdsPos=" + MineDebugLog.pos(this.destroyBlockPos)
+                    + " progress=" + this.destroyProgress);
+        }
+    }
+
+    /** 探针：原版 continueDestroyBlock 在挖别的方块时会把共享破坏状态改到那个方块 */
+    @Inject(at = @At("HEAD"), method = "continueDestroyBlock")
+    public void litematica_printer$probeContinueDestroy(BlockPos pos, Direction direction, CallbackInfoReturnable<Boolean> cir) {
+        if (this.isDestroying && pos != null && !pos.equals(this.destroyBlockPos)) {
+            MineDebugLog.write("vanilla continueDestroyBlock otherPos=" + MineDebugLog.pos(pos)
+                    + " holdsPos=" + MineDebugLog.pos(this.destroyBlockPos));
+        }
+    }
+
     @Inject(at = @At("HEAD"), method = "tick")
     public void tick(CallbackInfo ci) {
         if (this.hasDelayedDestroy) {
@@ -325,7 +372,8 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
 
     @Unique
     private int litematica_printer$getDestroyStage() {
-        float breakingProgress = this.destroyProgress >= ConfigUtils.getBreakProgressThreshold() ? 1.0F : this.destroyProgress;
+        float breakingProgress = this.litematica_printer$holdProgress >= SERVER_FAST_BREAK_THRESHOLD
+                ? 1.0F : this.litematica_printer$holdProgress;
         return breakingProgress > 0.0F ? (int) (breakingProgress * 10.0F) : -1;
     }
 
@@ -375,7 +423,9 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         ensureHasSentCarriedItem();
 
         float destroyProgress = blockState.getDestroyProgress(player, level, blockPos);
-        boolean fastPath = player.getAbilities().instabuild || destroyProgress >= MINE_FAST_FINISH_PROGRESS;
+        // 用服务端自身的 0.7 规则做同 tick 快速路径，避免单刻进度不足 0.7 的方块走
+        // 失败挖掘队列（failedToMine）被拖慢到每秒约 10 个
+        boolean fastPath = player.getAbilities().instabuild || destroyProgress >= SERVER_FAST_BREAK_THRESHOLD;
 
         if (!fastPath) {
             if (this.hasDelayedDestroy) {
@@ -478,6 +528,8 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         }
         ensureHasSentCarriedItem();
         boolean useDelayedDestroy = forceDelayedDestroy || Configs.Break.BREAK_USE_DELAYED_DESTROY.getBooleanValue();
+        // 未开启延迟破坏时按服务端规则用 0.7 作为完成阈值；开启时保留用户可配阈值
+        float completionThreshold = useDelayedDestroy ? ConfigUtils.getBreakProgressThreshold() : SERVER_FAST_BREAK_THRESHOLD;
         if (blockState.isAir()) {
             if (this.hasDelayedDestroy && blockPos.equals(this.delayedDestroyPos)) {
                 this.hasDelayedDestroy = false;
@@ -485,8 +537,8 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                 this.litematica_printer$clearDestroyProgress(player, blockPos);
             }
             this.litematica_printer$removePendingDelayedDestroy(blockPos);
-            if (this.isDestroying && this.sameDestroyTarget(blockPos)) {
-                this.litematica_printer$resetDestroyState(player, blockPos);
+            if (this.litematica_printer$hasHold(blockPos)) {
+                this.litematica_printer$clearHold(player);
             }
             this.litematica_printer$resetHitSoundState();
             return BlockBreakResult.COMPLETED;
@@ -498,25 +550,27 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         }
         if (this.hasDelayedDestroy && blockPos.equals(this.delayedDestroyPos)) {
             MineDebugLog.write("mine break completed_wait pos=" + MineDebugLog.pos(blockPos) + " path=delayed_slot_busy");
-            return isDestroying ? BlockBreakResult.IN_PROGRESS : BlockBreakResult.COMPLETED;
+            return this.litematica_printer$holdPos != null ? BlockBreakResult.IN_PROGRESS : BlockBreakResult.COMPLETED;
         }
-        if (this.isDestroying && !blockPos.equals(this.destroyBlockPos)) {
-            this.litematica_printer$clearPendingBreakSound(this.destroyBlockPos);
-            NetworkUtils.sendPacket(getActionPacket(Action.ABORT_DESTROY_BLOCK, this.destroyBlockPos, direction, 0));
-            MineDebugLog.write("mine break abort previous=" + MineDebugLog.pos(this.destroyBlockPos)
+        if (this.litematica_printer$holdPos != null && !blockPos.equals(this.litematica_printer$holdPos)) {
+            BlockPos previousHold = this.litematica_printer$holdPos;
+            this.litematica_printer$clearPendingBreakSound(previousHold);
+            NetworkUtils.sendPacket(getActionPacket(Action.ABORT_DESTROY_BLOCK, previousHold, direction, 0));
+            MineDebugLog.write("mine break abort previous=" + MineDebugLog.pos(previousHold)
                     + " next=" + MineDebugLog.pos(blockPos));
-            this.litematica_printer$resetDestroyState(player, this.destroyBlockPos);
+            this.litematica_printer$clearHold(player);
             this.litematica_printer$resetHitSoundState();
         }
-        if (blockPos.equals(this.destroyBlockPos)) {
-            this.destroyProgress = this.destroyProgress + blockState.getDestroyProgress(player, level, blockPos);
+        if (this.litematica_printer$hasHold(blockPos)) {
+            this.litematica_printer$holdProgress = this.litematica_printer$holdProgress
+                    + blockState.getDestroyProgress(player, level, blockPos);
             if (manualHitSound) {
                 this.litematica_printer$playBlockHitSound(player, level, blockState, blockPos, false);
             }
             if (localEffects) {
                 level.destroyBlockProgress(player.getId(), blockPos, this.litematica_printer$getDestroyStage());
             }
-            if (this.destroyProgress >= ConfigUtils.getBreakProgressThreshold()) {
+            if (this.litematica_printer$holdProgress >= completionThreshold) {
                 if (!localBlockRemoval) {
                     this.litematica_printer$playBlockBreakSound(blockPos, blockState);
                 }
@@ -532,31 +586,32 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                 }
                 this.litematica_printer$resetHitSoundState();
                 MineDebugLog.write("mine break completed pos=" + MineDebugLog.pos(blockPos)
-                        + " path=same_target_threshold threshold=" + ConfigUtils.getBreakProgressThreshold());
+                        + " path=same_target_threshold threshold=" + completionThreshold);
                 return BlockBreakResult.COMPLETED;
             }
             long currentTick = getClientTickCount();
             if (!blockPos.equals(this.litematica_printer$lastLoggedInProgressPos)
                     || currentTick - this.litematica_printer$lastLoggedInProgressTick >= 10) {
                 MineDebugLog.write("mine break in_progress pos=" + MineDebugLog.pos(blockPos)
-                        + " path=same_target progress=" + this.destroyProgress
-                        + " threshold=" + ConfigUtils.getBreakProgressThreshold());
+                        + " path=same_target progress=" + this.litematica_printer$holdProgress
+                        + " threshold=" + completionThreshold);
                 this.litematica_printer$lastLoggedInProgressPos = blockPos;
                 this.litematica_printer$lastLoggedInProgressTick = currentTick;
             }
             return BlockBreakResult.IN_PROGRESS;
         }
-        if (!this.isDestroying || !blockPos.equals(this.destroyBlockPos)) {
-            if (this.isDestroying) {
-                this.litematica_printer$clearPendingBreakSound(this.destroyBlockPos);
-                NetworkUtils.sendPacket(getActionPacket(Action.ABORT_DESTROY_BLOCK, this.destroyBlockPos, direction, 0));
-                MineDebugLog.write("mine break abort previous=" + MineDebugLog.pos(this.destroyBlockPos)
+        if (!this.litematica_printer$hasHold(blockPos)) {
+            if (this.litematica_printer$holdPos != null) {
+                BlockPos previousHold = this.litematica_printer$holdPos;
+                this.litematica_printer$clearPendingBreakSound(previousHold);
+                NetworkUtils.sendPacket(getActionPacket(Action.ABORT_DESTROY_BLOCK, previousHold, direction, 0));
+                MineDebugLog.write("mine break abort previous=" + MineDebugLog.pos(previousHold)
                         + " next=" + MineDebugLog.pos(blockPos)
                         + " reason=new_target");
-                this.litematica_printer$resetDestroyState(player, this.destroyBlockPos);
+                this.litematica_printer$clearHold(player);
                 this.litematica_printer$resetHitSoundState();
             }
-            if (this.destroyProgress == 0.0F) {
+            if (this.litematica_printer$holdProgress == 0.0F) {
                 if (localEffects) {
                     blockState.attack(level, blockPos, player);
                 }
@@ -566,9 +621,9 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             }
             float destroyProgress = blockState.getDestroyProgress(player, level, blockPos);
             boolean mineFastFinish = forceDelayedDestroy && destroyProgress > MINE_FAST_FINISH_PROGRESS;
-            if (destroyProgress >= ConfigUtils.getBreakProgressThreshold() || mineFastFinish) {
+            if (destroyProgress >= completionThreshold || mineFastFinish) {
                 boolean waitForServerState = mineFastFinish
-                        && destroyProgress < ConfigUtils.getBreakProgressThreshold()
+                        && destroyProgress < completionThreshold
                         && destroyProgress <= MINE_FAST_FINISH_COMPLETED_PROGRESS;
                 if (!localBlockRemoval) {
                     if (waitForServerState) {
@@ -592,7 +647,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                 MineDebugLog.write("mine break completed pos=" + MineDebugLog.pos(blockPos)
                         + " path=" + (mineFastFinish ? "mine_fast_finish" : "instant_threshold")
                         + " progress=" + destroyProgress
-                        + " threshold=" + ConfigUtils.getBreakProgressThreshold());
+                        + " threshold=" + completionThreshold);
                 return waitForServerState ? BlockBreakResult.COMPLETED_WAIT : BlockBreakResult.COMPLETED;
             }
             NetworkUtils.sendPacket(sequence -> getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence));
@@ -613,7 +668,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                 return BlockBreakResult.COMPLETED;
             }
             if (useDelayedDestroy) {
-                if (destroyProgress >= ConfigUtils.getBreakProgressThreshold()) {
+                if (destroyProgress >= completionThreshold) {
                     if (!localBlockRemoval) {
                         this.litematica_printer$playBlockBreakSound(blockPos, blockState);
                     }
@@ -650,10 +705,10 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
                     return BlockBreakResult.COMPLETED_WAIT;
                 }
             }
-            this.isDestroying = true;
-            this.destroyBlockPos = blockPos;
-            this.destroyProgress = destroyProgress;
+            this.litematica_printer$holdPos = blockPos.immutable();
+            this.litematica_printer$holdProgress = destroyProgress;
             this.destroyingItem = player.getMainHandItem();
+            NetworkUtils.sendPacket(sequence -> getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence));
             if (localEffects) {
                 level.destroyBlockProgress(player.getId(), blockPos, this.litematica_printer$getDestroyStage());
             }

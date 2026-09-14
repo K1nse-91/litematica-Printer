@@ -3,6 +3,7 @@ package me.K1nse_.litematica.printer.handler.handlers.bedrock;
 import me.K1nse_.litematica.printer.config.Configs;
 import me.K1nse_.litematica.printer.handler.ClientPlayerTickManager;
 import me.K1nse_.litematica.printer.handler.HudStatsManager;
+import me.K1nse_.litematica.printer.printer.RttReplayController;
 import me.K1nse_.litematica.printer.utils.CooldownUtils;
 import me.K1nse_.litematica.printer.utils.mods.LitematicaUtils;
 import net.minecraft.client.Minecraft;
@@ -57,6 +58,10 @@ public final class BedrockController {
     private static int failedTargetsSinceReset = 0;
     private static int stuckTargetsSinceReset = 0;
     private static String lastHudReason = "idle";
+    /** 服务端确认跟踪：多人自适应宽限/退避，单机或 RTT=0 时保持原速 */
+    private static final BedrockNetworkSync NETWORK_SYNC = new BedrockNetworkSync(
+            ClientPlayerTickManager::getCurrentHandlerTime,
+            () -> RttReplayController.INSTANCE.getExtraIntervalTicks(100));
     private BedrockController() {
     }
 
@@ -81,11 +86,21 @@ public final class BedrockController {
         failedTargetsSinceReset = 0;
         stuckTargetsSinceReset = 0;
         lastHudReason = "idle";
+        NETWORK_SYNC.reset();
         HudStatsManager.INSTANCE.resetMode(HudStatsManager.Mode.BEDROCK);
     }
 
     public static void clearHorizontalLookState() {
         BedrockPlacer.clearHorizontalLookState();
+    }
+
+    static BedrockNetworkSync networkSync() {
+        return NETWORK_SYNC;
+    }
+
+    /** 服务端权威方块更新钩子：命中待确认尝试的机器足迹时记录确认/迟到 */
+    public static void onServerBlockUpdate(BlockPos pos) {
+        NETWORK_SYNC.onServerBlockUpdate(pos);
     }
 
     public static void tick() {
@@ -494,13 +509,18 @@ public final class BedrockController {
             confirmedSuccessesSinceReset++;
             lastHudReason = "running";
             HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.BEDROCK, 1);
+            NETWORK_SYNC.confirmed(target.getBedrockPos());
         }
         if (target.getStatus() == BedrockTarget.Status.FAILED) {
             failedTargetsSinceReset++;
             lastHudReason = "failed";
+            NETWORK_SYNC.discarded(target.getBedrockPos(), false);
         } else if (target.getStatus() == BedrockTarget.Status.STUCK) {
             stuckTargetsSinceReset++;
             lastHudReason = "stuck";
+            NETWORK_SYNC.discarded(target.getBedrockPos(), true);
+        } else if ("out_of_range".equals(reason)) {
+            NETWORK_SYNC.discarded(target.getBedrockPos(), false);
         }
         if (target.isHorizontalLayout()) {
             BedrockPlacer.clearHorizontalLookState();
@@ -599,10 +619,12 @@ public final class BedrockController {
     }
 
     private static boolean countsTowardsActiveCap(BedrockTarget.Status status) {
-        return status == BedrockTarget.Status.UNINITIALIZED
-                || status == BedrockTarget.Status.UNEXTENDED_WITH_POWER_SOURCE
-                || status == BedrockTarget.Status.UNEXTENDED_WITHOUT_POWER_SOURCE
-                || status == BedrockTarget.Status.EXTENDED;
+        // 等待/收回中的目标在服务端确认结果前仍占有活塞、头与电源足迹；
+        // 若不计入活跃上限，准入会复用同一批坐标，破坏下一台机器。
+        return status != null
+                && status != BedrockTarget.Status.FAILED
+                && status != BedrockTarget.Status.STUCK
+                && status != BedrockTarget.Status.RETRACTED;
     }
 
     private static boolean isFastLaneStatus(BedrockTarget.Status status) {
@@ -943,7 +965,8 @@ public final class BedrockController {
 
     private static void setRetryCooldown(BlockPos pos, int ticks) {
         if (CLIENT.level != null && pos != null && ticks > 0) {
-            CooldownUtils.INSTANCE.setCooldown(CLIENT.level, RETRY_COOLDOWN_KEY, pos, ticks);
+            // 多人模式按 RTT 自适应退避同一目标的重试
+            CooldownUtils.INSTANCE.setCooldown(CLIENT.level, RETRY_COOLDOWN_KEY, pos, NETWORK_SYNC.retryDelayTicks(ticks));
         }
     }
 
@@ -1155,7 +1178,11 @@ public final class BedrockController {
                 getVerticalActiveTargetCap(),
                 getSideTargetCap(),
                 successRate,
-                lastHudReason
+                lastHudReason,
+                NETWORK_SYNC.pendingCount(),
+                NETWORK_SYNC.adaptiveBackoffs(),
+                NETWORK_SYNC.serverUpdateTimeouts(),
+                NETWORK_SYNC.lastResult()
         );
     }
 
@@ -1179,7 +1206,11 @@ public final class BedrockController {
             int verticalActiveCap,
             int sideCap,
             double successRate,
-            String lastReason
+            String lastReason,
+            int pendingServerUpdates,
+            int adaptiveBackoffs,
+            int serverUpdateTimeouts,
+            String lastNetworkResult
     ) {
     }
 }

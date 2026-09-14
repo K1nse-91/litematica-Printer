@@ -3,6 +3,7 @@ package me.K1nse_.litematica.printer.mixin.printer.mc;
 import me.K1nse_.litematica.printer.I18n;
 import me.K1nse_.litematica.printer.config.Configs;
 import me.K1nse_.litematica.printer.handler.HudStatsManager;
+import me.K1nse_.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.K1nse_.litematica.printer.handler.scan.DirtyRegionTracker;
 import me.K1nse_.litematica.printer.handler.scan.ScanCache;
 import me.K1nse_.litematica.printer.utils.InteractionUtils;
@@ -40,6 +41,7 @@ public abstract class MixinClientPacketListener {
         DirtyRegionTracker.INSTANCE.markDirty(packet.getPos());
         InteractionUtils.INSTANCE.confirmServerBlockUpdate(packet.getPos());
         HudStatsManager.INSTANCE.confirmBlockUpdate(packet.getPos());
+        BedrockController.onServerBlockUpdate(packet.getPos());
     }
 
     @Inject(method = "handleChunkBlocksUpdate", at = @At("RETURN"))
@@ -49,6 +51,7 @@ public abstract class MixinClientPacketListener {
             DirtyRegionTracker.INSTANCE.markDirty(pos);
             InteractionUtils.INSTANCE.confirmServerBlockUpdate(pos);
             HudStatsManager.INSTANCE.confirmBlockUpdate(pos);
+            BedrockController.onServerBlockUpdate(pos);
         });
     }
 }

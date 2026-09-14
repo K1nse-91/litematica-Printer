@@ -8,6 +8,7 @@ import me.K1nse_.litematica.printer.utils.minecraft.BlockUtils;
 import me.K1nse_.litematica.printer.utils.minecraft.IdentifierUtils;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -21,7 +22,10 @@ import java.util.Set;
 
 /**
  * 拦截字符串列表配置按钮的点击，把方块类名单配置改成可视化方块选择界面。
- * 覆盖：方块破坏限制、挖掘、填充、排流体、破基岩 的黑/白名单及方块名单。
+ * 覆盖：方块破坏限制、挖掘、填充、排流体、破基岩 的黑/白名单及方块名单，
+ * 以及打印的 跳过放置 / 覆盖打印 列表。
+ * 非方块条目（标签 #、方块状态、中文名、“,c”包含匹配等）不会被界面改动，
+ * 打开界面时会原样保留并在保存时写回，避免丢配置。
  */
 @Mixin(value = ConfigButtonStringList.class, remap = false)
 public abstract class MixinConfigButtonStringList {
@@ -31,7 +35,9 @@ public abstract class MixinConfigButtonStringList {
             "excavateWhitelist", "excavateBlacklist", // 挖掘 白/黑名单
             "bedrockWhitelist",                       // 破基岩 白名单
             "fillBlockList",                          // 填充 方块名单
-            "fluidReplaceBlockList", "fluidList"      // 排流体 方块名单 / 液体名单
+            "fluidReplaceBlockList", "fluidList",     // 排流体 方块名单 / 液体名单
+            "printSkipList",                          // 打印 跳过放置列表
+            "printReplaceableList"                    // 打印 覆盖打印列表
     );
 
     @Shadow
@@ -45,10 +51,13 @@ public abstract class MixinConfigButtonStringList {
         }
 
         Set<Block> selected = new HashSet<>();
+        List<String> rawEntries = new ArrayList<>();
         for (String id : this.config.getStrings()) {
-            Block block = BlockUtils.getBlock(IdentifierUtils.of(id));
+            Block block = litematica_printer$resolveBlock(id);
             if (block != null) {
                 selected.add(block);
+            } else {
+                rawEntries.add(id);
             }
         }
 
@@ -57,9 +66,24 @@ public abstract class MixinConfigButtonStringList {
             for (Block block : blocks) {
                 ids.add(BlockUtils.getKeyString(block));
             }
+            ids.addAll(rawEntries);
             this.config.setStrings(ids);
         }));
 
         cir.setReturnValue(true);
+    }
+
+    /** 仅解析纯方块 ID；标签、方块状态、中文名、包含匹配等一律视为原始条目保留 */
+    private static Block litematica_printer$resolveBlock(String entry) {
+        if (entry == null || entry.isEmpty()
+                || entry.startsWith("#") || entry.contains("[") || entry.contains(",") || entry.contains(" ")) {
+            return null;
+        }
+        try {
+            Block block = BlockUtils.getBlock(IdentifierUtils.of(entry));
+            return block == Blocks.AIR ? null : block;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }
