@@ -21,4 +21,12 @@ public class ModLoadUtils {
     public static boolean isTweakerooLoaded() {
         return isLoadMod("tweakeroo");
     }
+
+    public static boolean isBedrockMinerLoaded() {
+        return isLoadMod("bedrockminer");
+    }
+
+    public static boolean isBlockMinerLoaded() {
+        return isLoadMod("blockminer");
+    }
 }

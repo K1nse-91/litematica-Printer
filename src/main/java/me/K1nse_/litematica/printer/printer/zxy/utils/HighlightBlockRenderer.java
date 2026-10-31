@@ -44,7 +44,9 @@ import org.joml.Vector4f;
 
 //#if MC >= 260100
 import org.joml.Matrix4fc;
+//#if MC < 260300
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
+//#endif
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 //#else
 //$$ import org.joml.Matrix4f;
@@ -201,6 +203,7 @@ public class HighlightBlockRenderer implements IRenderer {
 //        fi.dy.masa.litematica.render.RenderUtils.renderAreaSides(pos, pos, color4f, matrices, client);
     }
 
+//#if MC < 260300
     @Override
     //#if MC >= 260100
     public void onRenderWorldLast(RenderTarget fb, Matrix4fc matrices, CameraRenderState cameraState, Frustum culling, RenderBuffers buffers, GpuBufferSlice terrainFog, Vector4f fogColor, ProfilerFiller profiler) {
@@ -242,6 +245,7 @@ public class HighlightBlockRenderer implements IRenderer {
         }
         shaderIng = false;
     }
+//#endif
 
     // @formatter:on
 

@@ -31,13 +31,20 @@ import java.util.Set;
 public abstract class MixinConfigButtonStringList {
     /** 所有应使用可视化方块选择界面的名单配置名 */
     private static final Set<String> BLOCK_LIST_CONFIGS = Set.of(
-            "breakWhitelist", "breakBlacklist",       // 方块破坏限制 白/黑名单
-            "excavateWhitelist", "excavateBlacklist", // 挖掘 白/黑名单
-            "bedrockWhitelist",                       // 破基岩 白名单
-            "fillBlockList",                          // 填充 方块名单
-            "fluidReplaceBlockList", "fluidList",     // 排流体 方块名单 / 液体名单
-            "printSkipList",                          // 打印 跳过放置列表
-            "printReplaceableList"                    // 打印 覆盖打印列表
+            "breakWhitelist", "breakBlacklist",             // 方块破坏限制 白/黑名单
+            "breakVeilList",                                // 瞬时破坏名单
+            "breakFluidList",                               // 不破坏的流体/方块
+            "excavateWhitelist", "excavateBlacklist",       // 挖掘 白/黑名单
+            "bedrockWhitelist",                             // 破基岩 白名单
+            "fillBlockList",                                // 填充 方块名单
+            "fluidReplaceBlockList", "fluidList",           // 排流体 方块/液体名单
+            "printSkipList",                                // 打印 跳过放置
+            "printReplaceableList",                         // 打印 覆盖打印
+            "printScanWhitelistList",                       // 打印 扫描白名单
+            "printSubstituteList",                          // 打印 材料替代
+            "printAutoFillComposterWhitelist",              // 堆肥桶填充白名单
+            "walkScanWhitelistList",                        // 自动寻路扫描白名单
+            "renderOnlyBlockList"                           // 只渲染的方块名单
     );
 
     @Shadow
@@ -61,7 +68,7 @@ public abstract class MixinConfigButtonStringList {
             }
         }
 
-        GuiBase.openGui(new ChooseBlockScreen(selected, blocks -> {
+        GuiBase.openGui(new ChooseBlockScreen(selected, rawEntries, blocks -> {
             List<String> ids = new ArrayList<>();
             for (Block block : blocks) {
                 ids.add(BlockUtils.getKeyString(block));

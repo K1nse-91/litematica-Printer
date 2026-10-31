@@ -90,7 +90,7 @@ public abstract class Module extends ConfigUtils {
         this.printMode = printMode;
         this.enableConfig = enableConfig;
         this.selectionType = selectionType;
-        this.interactionBoxTracker = new InteractionBoxTracker(useBox);
+        this.interactionBoxTracker = new InteractionBoxTracker(useBox, this.printMode);
         this.playerInteractionBox = this.interactionBoxTracker.getBoxReference();
         this.externalScanBoxRef = this.playerInteractionBox == null ? null : new AtomicReference<>();
         this.updateVariables();

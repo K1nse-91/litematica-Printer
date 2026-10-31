@@ -57,6 +57,13 @@ final class MineBreakExecutor {
             return null;
         }
         ItemStack currentStack = player.getMainHandItem();
+        if (InteractionUtils.isInstantBreakTarget(state)) {
+            // 瞬时破坏名单：无视破坏进度，直接作为可完成目标返回
+            float veilCurrentProgress = this.getCurrentProgress(player, state, currentStack, pos);
+            ToolChoice veilToolChoice = this.getBestToolChoice(player, state, currentStack, veilCurrentProgress, pos);
+            return new Target(pos.immutable(), state, veilCurrentProgress, 1.0F, Direction.DOWN,
+                    veilToolChoice.item(), veilToolChoice.currentPreservesDrops(), veilToolChoice.preservesDrops());
+        }
         if (player.getAbilities().instabuild) {
             return new Target(pos.immutable(), state, 1.0F, 1.0F, Direction.DOWN, currentStack.getItem(), false, false);
         }

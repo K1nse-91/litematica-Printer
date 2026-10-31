@@ -38,6 +38,10 @@ public class ActionManager {
     @Nullable
     public PlayerLook look;
     public boolean needWaitModifyLook = false;
+
+    /** 手动打开界面（铁砧等）的让行截止时间，期间不自动发包 */
+    private static long manualScreenAllowanceDeadlineNanos = 0L;
+    private static final long MANUAL_SCREEN_ALLOWANCE_MS = 1500L;
     private boolean waitForHorizontalLook = true;
     private boolean actionRequiresWaitModifyLook = false;
     private long lastQueuedLookTick = Long.MIN_VALUE;
@@ -80,6 +84,10 @@ public class ActionManager {
     }
 
     public ActionManager sendQueue(@Nullable LocalPlayer player) {
+        if (hasManualScreenAllowance()) {
+            this.clearQueue();
+            return this;
+        }
         QueuedClick click = this.queuedClick;
         if (click == null || player == null) {
             clearQueue();
@@ -229,5 +237,14 @@ public class ActionManager {
         this.waitForHorizontalLook = true;
         this.actionRequiresWaitModifyLook = false;
         this.look = null;
+    }
+
+    /** 手动交互（铁砧等）优先：给出短暂让行窗口 */
+    public static void prioritizeManualAnvilScreen() {
+        manualScreenAllowanceDeadlineNanos = System.nanoTime() + MANUAL_SCREEN_ALLOWANCE_MS * 1_000_000L;
+    }
+
+    public static boolean hasManualScreenAllowance() {
+        return manualScreenAllowanceDeadlineNanos != 0L && System.nanoTime() < manualScreenAllowanceDeadlineNanos;
     }
 }

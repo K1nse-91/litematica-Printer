@@ -53,12 +53,26 @@ val Project.javaVersion
     }
 val Project.mixinJavaVersion get() = "JAVA_${javaVersion}"
 
+/** 本地构建迭代计数：每次构建自增，用于版本号递增（CI 环境使用 GITHUB_RUN_NUMBER） */
+val Project.localBuildNumber: Int
+    get() {
+        val extra = rootProject.extensions.extraProperties
+        val cached = if (extra.has("litematica_printer_local_build")) extra.get("litematica_printer_local_build") as? Int else null
+        if (cached != null) return cached
+        val file = rootProject.file(".build-number")
+        val previous = if (file.exists()) (file.readText().trim().toIntOrNull() ?: 0) else 0
+        val next = previous + 1
+        file.writeText(next.toString())
+        extra.set("litematica_printer_local_build", next)
+        return next
+    }
+
 val Project.fullProjectVersion: String get() {
     val buildNumber = githubRunNumber
     return when {
         buildNumber != null && isReleaseWorkflow -> "$modVersion-beta$buildNumber"
         buildNumber != null -> "$modVersion-dev$buildNumber"
-        else -> "$modVersion-local"
+        else -> "$modVersion-local.b$localBuildNumber"
     }
 }
 
@@ -72,7 +86,7 @@ val Project.artifactVersion: String get() {
     return when {
         buildNumber != null && isReleaseWorkflow -> "$baseVersion$flavorSuffix-beta$buildNumber"
         buildNumber != null -> "$baseVersion$flavorSuffix-dev$buildNumber"
-        else -> "$baseVersion$flavorSuffix-local"
+        else -> "$baseVersion$flavorSuffix-local.b$localBuildNumber"
     }
 }
 

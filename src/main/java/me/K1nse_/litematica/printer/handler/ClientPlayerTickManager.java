@@ -14,6 +14,12 @@ import me.K1nse_.litematica.printer.utils.minecraft.NetworkUtils;
 import me.K1nse_.litematica.printer.utils.mods.TakeItOutUtils;
 import net.minecraft.client.Minecraft;
 
+//#if MC >= 260100
+import me.K1nse_.litematica.printer.go.AutoWalkScanner;
+import me.K1nse_.litematica.printer.go.GhastFlyer;
+import me.K1nse_.litematica.printer.go.GoManager;
+//#endif
+
 @SuppressWarnings("SpellCheckingInspection")
 public class ClientPlayerTickManager {
     public static final Minecraft mc = Minecraft.getInstance();
@@ -29,6 +35,13 @@ public class ClientPlayerTickManager {
     private static final TickScheduler SCHEDULER = new TickScheduler(VALUES);
 
     public static void tick() {
+        // 背包同步状态机（移植自 EMT）
+        me.K1nse_.litematica.printer.printer.zxy.utils.ZxyUtils.tick();
+        //#if MC >= 260100
+        // 自动寻路（移植自 EMT）
+        GoManager.INSTANCE.tick();
+        AutoWalkScanner.INSTANCE.tick();
+        //#endif
         SCHEDULER.tick();
     }
 
@@ -64,6 +77,10 @@ public class ClientPlayerTickManager {
         SwitchItem.reSet();
         me.K1nse_.litematica.printer.printer.zxy.inventory.InventoryUtils.resetRuntime();
         BedrockController.reset();
+        //#if MC >= 260100
+        GhastFlyer.resetRuntime();
+        GoManager.INSTANCE.stop(null);
+        //#endif
         HudStatsManager.INSTANCE.resetAll();
         SCHEDULER.resetRuntime();
         for (Module module : VALUES) {

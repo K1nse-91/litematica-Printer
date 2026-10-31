@@ -34,6 +34,18 @@ public class ConfigUtils {
         return Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.PRINTER;
     }
 
+    /** 打印模式处于激活状态（移植自 EMT：单模=打印，多模=打印开关开启），供自动寻路判断工作状态 */
+    public static boolean isPrintModeActive() {
+        if (!isEnable()) {
+            return false;
+        }
+        WorkingModeType mode = (WorkingModeType) Configs.Core.WORK_MODE.getOptionListValue();
+        return switch (mode) {
+            case SINGLE -> Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.PRINTER;
+            case MULTI -> Configs.Core.PRINT.getBooleanValue();
+        };
+    }
+
     public static boolean isMineMode() {
         if (isMultiMode()) {
             return Configs.Core.MINE.getBooleanValue();

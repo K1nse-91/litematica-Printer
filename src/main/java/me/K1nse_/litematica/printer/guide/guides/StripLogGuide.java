@@ -8,7 +8,9 @@ import me.K1nse_.litematica.printer.printer.SchematicBlockContext;
 import me.K1nse_.litematica.printer.printer.action.Action;
 import me.K1nse_.litematica.printer.printer.action.ClickAction;
 import me.K1nse_.litematica.printer.Reference;
-import net.fabricmc.fabric.mixin.content.registry.AxeItemAccessor;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import java.util.HashMap;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -20,8 +22,30 @@ import java.util.Map;
  */
 public class StripLogGuide extends Guide {
 
-    @SuppressWarnings("all")
-    private static final Map<Block, Block> STRIPPED_LOGS = AxeItemAccessor.getStrippables();
+    /** 由注册表推导去皮映射（原木/木头/菌柄/菌核 → stripped_ 前缀），避免依赖 Fabric 内部 accessor */
+    private static final Map<Block, Block> STRIPPED_LOGS = buildStrippables();
+
+    private static Map<Block, Block> buildStrippables() {
+        Map<Block, Block> map = new HashMap<>();
+        for (Block block : BuiltInRegistries.BLOCK) {
+            Identifier id = BuiltInRegistries.BLOCK.getKey(block);
+            String path = id.getPath();
+            if (path.startsWith("stripped_")) {
+                continue;
+            }
+            if (!(path.endsWith("_log") || path.endsWith("_wood") || path.endsWith("_stem") || path.endsWith("_hyphae"))) {
+                continue;
+            }
+            Identifier strippedId = Identifier.fromNamespaceAndPath(id.getNamespace(), "stripped_" + path);
+            if (BuiltInRegistries.BLOCK.containsKey(strippedId)) {
+                Block stripped = BuiltInRegistries.BLOCK.getOptional(strippedId).orElse(null);
+                if (stripped != null) {
+                    map.put(block, stripped);
+                }
+            }
+        }
+        return map;
+    }
 
     public StripLogGuide(SchematicBlockContext context) {
         super(context);

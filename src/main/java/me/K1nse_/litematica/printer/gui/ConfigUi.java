@@ -21,9 +21,13 @@ import java.util.function.BooleanSupplier;
 
 public class ConfigUi extends GuiConfigsBase {
     private static Tab tab = Tab.CORE;
+    /** 上次绘制时的可见性签名，用于检测「依赖开关」变化后重建列表 */
+    private long lastVisibilitySignature = Long.MIN_VALUE;
+    /** 已排队的列表重建，避免在绘制期间直接重建导致首帧空白 */
+    private boolean rebuildScheduled;
 
     public ConfigUi(@Nullable Screen parent) {
-        super(10, 50, Reference.MOD_ID, parent, Reference.MOD_NAME + " " + UpdateCheckerUtils.LOCAL_VERSION + "   " + I18n.FREE_NOTICE.getName().getString());
+        super(10, 50, Reference.MOD_ID, parent, Reference.MOD_NAME + " " + UpdateCheckerUtils.LOCAL_VERSION);
     }
 
     public ConfigUi() {
@@ -53,6 +57,7 @@ public class ConfigUi extends GuiConfigsBase {
         for (Tab tab : Tab.values()) {
             x += this.createButton(x, y, -1, tab);
         }
+        this.lastVisibilitySignature = this.computeVisibilitySignature();
     }
 
     public void reset() {
@@ -131,4 +136,35 @@ public class ConfigUi extends GuiConfigsBase {
             this.parent.reset();
         }
     }
+    private long computeVisibilitySignature() {
+        long hash = 17L;
+        for (IConfigBase config : ConfigUi.tab.getConfigs()) {
+            if (config instanceof ConfigExtension extension) {
+                BooleanSupplier visible = extension.litematica_printer$getVisible();
+                hash = hash * 31L + (visible != null && visible.getAsBoolean() ? 1L : 0L);
+            }
+        }
+        return hash;
+    }
+
+    @Override
+    public void drawContents(fi.dy.masa.malilib.render.GuiContext ctx, int mouseX, int mouseY, float partialTicks) {
+        long signature = this.computeVisibilitySignature();
+        if (signature != this.lastVisibilitySignature) {
+            this.lastVisibilitySignature = signature;
+            if (!this.rebuildScheduled) {
+                this.rebuildScheduled = true;
+                Minecraft.getInstance().execute(() -> {
+                    this.rebuildScheduled = false;
+                    try {
+                        this.reCreateListWidget();
+                        Objects.requireNonNull(this.getListWidget()).resetScrollbarPosition();
+                    } catch (Throwable ignored) {
+                    }
+                });
+            }
+        }
+        super.drawContents(ctx, mouseX, mouseY, partialTicks);
+    }
+
 }

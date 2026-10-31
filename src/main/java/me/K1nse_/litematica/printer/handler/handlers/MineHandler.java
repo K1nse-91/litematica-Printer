@@ -59,6 +59,16 @@ public class MineHandler extends Module {
         super(NAME, PrintModeType.MINE, Configs.Core.MINE, Configs.Mine.MINE_SELECTION_TYPE, true);
     }
 
+    /** 并行挖掘（移植自 EMT）：收集候选后按同一把工具批量连挖；关闭时逐个方块直接挖掘 */
+    private boolean isParallelMode() {
+        return Configs.Break.BREAK_PARALLEL.getBooleanValue();
+    }
+
+    /** 让位手动挖掘（移植自 EMT）：玩家按住左键手动挖掘时暂停 */
+    private boolean isNonBlockingPaused() {
+        return Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && InteractionUtils.isPlayerMining();
+    }
+
     @Override
     public void tick() {
         this.tick(TickContext.capture());
@@ -212,6 +222,9 @@ public class MineHandler extends Module {
 
     @Override
     protected boolean canIterate() {
+        if (this.isNonBlockingPaused()) {
+            return false;
+        }
         return this.activeMinePos == null && !InteractionUtils.INSTANCE.hasActiveDestroyTarget();
     }
 
@@ -229,6 +242,9 @@ public class MineHandler extends Module {
 
     @Override
     public boolean canIterationBlockPos(BlockPos pos) {
+        if (this.isNonBlockingPaused()) {
+            return false;
+        }
         if (this.hasTrenchFillWork() && this.trenchFillTargets.contains(pos)) {
             return this.level != null
                     && !this.trenchFillInFlight.containsKey(pos)
@@ -248,6 +264,22 @@ public class MineHandler extends Module {
         }
         if (this.hasTrenchFillWork() && this.trenchWaterloggedTargets.contains(blockPos)) {
             this.executeTrenchWaterloggedBreak(blockPos, skipIteration);
+            return;
+        }
+        // 串行挖掘（移植自 EMT）：逐个方块直接破坏，占用该 tick 的有效执行配额
+        if (!this.isParallelMode()) {
+            if (this.isNonBlockingPaused()) {
+                this.setIterationConsumedEffectiveExecution(false);
+                return;
+            }
+            BlockBreakResult result = InteractionUtils.INSTANCE.continueDestroyBlock(blockPos, Direction.DOWN);
+            if (result == BlockBreakResult.IN_PROGRESS || result == BlockBreakResult.COMPLETED_WAIT) {
+                skipIteration.set(true);
+            }
+            if (result != BlockBreakResult.FAILED) {
+                this.setBlockPosCooldown(blockPos, ConfigUtils.getBreakCooldown());
+            }
+            MineResultReporter.record(blockPos, result);
             return;
         }
         MineBreakExecutor.Target target = this.analyzer.analyze(blockPos);
@@ -351,7 +383,8 @@ public class MineHandler extends Module {
             return false;
         }
 
-        if (Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue() && state.getBlock().defaultDestroyTime() < 0) {
+        if (Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue() && state.getBlock().defaultDestroyTime() < 0
+                && !InteractionUtils.isInstantBreakTarget(state)) {
             return false;
         }
 

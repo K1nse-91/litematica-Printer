@@ -5,7 +5,9 @@ import me.K1nse_.litematica.printer.config.Configs;
 import me.K1nse_.litematica.printer.enums.QuickShulkerModeType;
 import me.K1nse_.litematica.printer.I18n;
 import me.K1nse_.litematica.printer.utils.minecraft.MessageUtils;
+//#if MC < 260300
 import net.kyrptonaught.quickshulker.client.ClientUtil;
+//#endif
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -28,6 +30,7 @@ public class ShulkerUtils {
             client.gameMode.handleContainerInput(client.player.containerMenu.containerId, shulkerBoxSlot, 1, ContainerInput.PICKUP, client.player);
             return true;
         } else if (openMode == QuickShulkerModeType.INVOKE) {
+                //#if MC < 260300
             if (ModLoadUtils.isQuickShulkerLoaded()) {
                 try {
                     ClientUtil.CheckAndSend(stack, shulkerBoxSlot);
@@ -35,6 +38,10 @@ public class ShulkerUtils {
                 } catch (Exception ignored) {
                     return false;
                 }
+                //#else
+                //$$ MessageUtils.addMessage(I18n.SHULKER_MOD_NOT_LOADED.getName());
+                //$$ return false;
+                //#endif
             } else {
                 MessageUtils.addMessage(I18n.SHULKER_MOD_NOT_LOADED.getName());
             }

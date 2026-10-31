@@ -4,6 +4,7 @@ import fi.dy.masa.malilib.config.IConfigOptionListEntry;
 import fi.dy.masa.malilib.util.restrictions.UsageRestriction;
 import me.K1nse_.litematica.printer.config.Configs;
 import me.K1nse_.litematica.printer.enums.ExcavateListMode;
+import me.K1nse_.litematica.printer.enums.FluidAvoidStrategyType;
 import me.K1nse_.litematica.printer.mixin_extension.BlockBreakResult;
 import me.K1nse_.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
 import me.K1nse_.litematica.printer.printer.SchematicBlockContext;
@@ -16,13 +17,21 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.AnvilBlock;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.DragonEggBlock;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -38,6 +47,13 @@ public class InteractionUtils {
     public static final InteractionUtils INSTANCE = new InteractionUtils();
     private static final UsageRestrictionCache BREAK_RESTRICTION_CACHE = new UsageRestrictionCache();
 
+    // ---- 避让流体（移植自 EMT）----
+    private static final Set<Block> FLUID_AVOID_BLOCKS = Collections.newSetFromMap(new IdentityHashMap<>());
+    private static List<String> fluidListSnapshot = List.of();
+    private static FluidAvoidStrategyType fluidStrategySnapshot = FluidAvoidStrategyType.FIVE_FACES;
+    private static boolean fluidMatcherInitialized = false;
+    private static long lastPlayerMineGameTime = -1L;
+
     private final Queue<BlockPos> breakQueue = new LinkedList<>();
     private final Set<BlockPos> queuedBreaks = new HashSet<>();
     private final Map<BlockPos, Integer> recentlyBroken = new HashMap<>();
@@ -49,12 +65,41 @@ public class InteractionUtils {
     private InteractionUtils() {
     }
 
+    /** 瞬时破坏名单命中：名单内方块无视硬度/破坏进度，直接 START+STOP 两包瞬破 */
+    public static boolean isInstantBreakTarget(@Nullable BlockState state) {
+        if (state == null || state.isAir()) {
+            return false;
+        }
+        if (!Configs.Break.BREAK_INSTANT_MINE.getBooleanValue()) {
+            return false;
+        }
+        List<String> veilList = Configs.Break.BREAK_INSTANT_MINE_LIST.getStrings();
+        if (veilList.isEmpty()) {
+            return false;
+        }
+        for (String rule : veilList) {
+            if (FilterUtils.matchBlockName(rule, state)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static boolean canBreakBlock(BlockPos pos) {
         ClientLevel world = client.level;
         LocalPlayer player = client.player;
         if (world == null || player == null) return false;
         BlockState currentState = world.getBlockState(pos);
+        if (isInstantBreakTarget(currentState)) {
+            return true;
+        }
         if (Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue() && currentState.getBlock().defaultDestroyTime() < 0) {
+            return false;
+        }
+        if (Configs.Break.BREAK_AVOID_FLUID.getBooleanValue() && isFluidProtected(pos, world)) {
+            return false;
+        }
+        if (Configs.Break.BREAK_AVOID_SUPPORT.getBooleanValue() && isSupportProtected(pos, world)) {
             return false;
         }
         return !currentState.isAir() &&
@@ -63,6 +108,89 @@ public class InteractionUtils {
                 !currentState.is(Blocks.VOID_AIR) &&
                 !(currentState.getBlock() instanceof LiquidBlock) &&
                 !player.blockActionRestricted(client.level, pos, client.gameMode.getPlayerMode());
+    }
+
+    /** 玩家是否正在手动按住左键挖掘（1 tick 判定窗口），供「让位手动挖掘」使用 */
+    public static boolean isPlayerMining() {
+        LocalPlayer player = client.player;
+        ClientLevel level = client.level;
+        if (player == null || level == null || player.getAbilities().instabuild || player.isSpectator()) {
+            return false;
+        }
+        boolean mining = client.options.keyAttack.isDown()
+                && client.hitResult != null
+                && client.hitResult.getType() == HitResult.Type.BLOCK;
+        if (mining) {
+            lastPlayerMineGameTime = level.getGameTime();
+        }
+        long diff = level.getGameTime() - lastPlayerMineGameTime;
+        return diff >= 0 && diff <= 1;
+    }
+
+    // ---- 避让流体匹配器 ----
+
+    private static void ensureFluidAvoidMatcher() {
+        List<String> configured = List.copyOf(Configs.Break.BREAK_FLUID_LIST.getStrings());
+        FluidAvoidStrategyType strategy = (FluidAvoidStrategyType) Configs.Break.BREAK_FLUID_STRATEGY.getOptionListValue();
+        if (fluidMatcherInitialized && fluidListSnapshot.equals(configured)) {
+            fluidStrategySnapshot = strategy;
+            return;
+        }
+        FLUID_AVOID_BLOCKS.clear();
+        for (Block block : BuiltInRegistries.BLOCK) {
+            BlockState state = block.defaultBlockState();
+            boolean matched = configured.stream().anyMatch(entry -> FilterUtils.matchBlockName(entry, state));
+            Item item = block.asItem();
+            if (!matched && item != Items.AIR) {
+                matched = configured.stream().anyMatch(entry -> FilterUtils.matchItemName(entry, new ItemStack(item)));
+            }
+            if (matched) {
+                FLUID_AVOID_BLOCKS.add(block);
+            }
+        }
+        fluidListSnapshot = configured;
+        fluidStrategySnapshot = strategy;
+        fluidMatcherInitialized = true;
+    }
+
+    private static boolean isConfiguredFluid(BlockState state) {
+        if (state == null) {
+            return false;
+        }
+        return FLUID_AVOID_BLOCKS.contains(state.getBlock())
+                || !state.getFluidState().isEmpty() && FLUID_AVOID_BLOCKS.contains(state.getFluidState().createLegacyBlock().getBlock());
+    }
+
+    private static boolean isGravityBlock(BlockState state) {
+        if (state == null || state.isAir()) {
+            return false;
+        }
+        Block block = state.getBlock();
+        return block instanceof FallingBlock || block instanceof AnvilBlock || block instanceof DragonEggBlock;
+    }
+
+    private static boolean isFluidProtected(BlockPos pos, ClientLevel level) {
+        if (client.player == null) {
+            return false;
+        }
+        if (pos == null || level == null) {
+            return false;
+        }
+        ensureFluidAvoidMatcher();
+        boolean besideFluid = isConfiguredFluid(level.getBlockState(pos.above()))
+                || isConfiguredFluid(level.getBlockState(pos.east()))
+                || isConfiguredFluid(level.getBlockState(pos.west()))
+                || isConfiguredFluid(level.getBlockState(pos.north()))
+                || isConfiguredFluid(level.getBlockState(pos.south()));
+        if (besideFluid) {
+            return true;
+        }
+        return fluidStrategySnapshot == FluidAvoidStrategyType.SIX_FACES
+                && isConfiguredFluid(level.getBlockState(pos.below()));
+    }
+
+    private static boolean isSupportProtected(BlockPos pos, ClientLevel level) {
+        return pos != null && level != null && isGravityBlock(level.getBlockState(pos.above()));
     }
 
     public static boolean breakRestriction(BlockState blockState) {

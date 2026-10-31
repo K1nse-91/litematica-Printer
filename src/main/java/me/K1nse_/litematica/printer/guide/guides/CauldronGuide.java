@@ -46,10 +46,37 @@ public class CauldronGuide extends Guide {
 
     @Override
     protected Result onBuildActionWrongBlock(BlockMatchResult state) {
+        // 炼药锅填充（移植自 EMT）：空锅 → 目标液体锅
+        if (Configs.Print.FILL_CAULDRON.getBooleanValue()) {
+            Result fill = this.buildFillAction();
+            if (fill != null) {
+                return fill;
+            }
+        }
         if (Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue()
                 && InteractionUtils.canBreakBlock(blockPos)) {
             InteractionUtils.INSTANCE.add(context);
         }
         return Result.SKIP;
+    }
+
+    /** Fill an empty cauldron into the required liquid cauldron (ported from EMT) */
+    private Result buildFillAction() {
+        if (!currentState.is(net.minecraft.world.level.block.Blocks.CAULDRON)) {
+            return null;
+        }
+        if (requiredState.is(net.minecraft.world.level.block.Blocks.WATER_CAULDRON)
+                && InventoryUtils.playerHasAccessToItem(client.player, Items.WATER_BUCKET)) {
+            return Result.success(new ClickAction().setItem(Items.WATER_BUCKET));
+        }
+        if (requiredState.is(net.minecraft.world.level.block.Blocks.LAVA_CAULDRON)
+                && InventoryUtils.playerHasAccessToItem(client.player, Items.LAVA_BUCKET)) {
+            return Result.success(new ClickAction().setItem(Items.LAVA_BUCKET));
+        }
+        if (requiredState.is(net.minecraft.world.level.block.Blocks.POWDER_SNOW_CAULDRON)
+                && InventoryUtils.playerHasAccessToItem(client.player, Items.POWDER_SNOW_BUCKET)) {
+            return Result.success(new ClickAction().setItem(Items.POWDER_SNOW_BUCKET));
+        }
+        return null;
     }
 }

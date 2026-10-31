@@ -90,25 +90,43 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
         getTargetSignEntity(sign).ifPresent(signBlockEntity ->
         {
             //#if MC > 11904
-            String line1 = signBlockEntity.getText(front).getMessage(0, false).getString();
-            String line2 = signBlockEntity.getText(front).getMessage(1, false).getString();
-            String line3 = signBlockEntity.getText(front).getMessage(2, false).getString();
-            String line4 = signBlockEntity.getText(front).getMessage(3, false).getString();
+            //#if MC >= 260300
+            //$$ var signText = signBlockEntity.getText(front
+            //$$         ? net.minecraft.world.level.block.entity.SignTextSlot.FRONT
+            //$$         : net.minecraft.world.level.block.entity.SignTextSlot.BACK);
+            //$$ var signMessages = signText.getMessages(false);
+            //$$ String line1 = signMessages.get(0).getString();
+            //$$ String line2 = signMessages.get(1).getString();
+            //$$ String line3 = signMessages.get(2).getString();
+            //$$ String line4 = signMessages.get(3).getString();
             //#else
-            //$$ String line1 = signBlockEntity.getMessage(0, false).getString();
-            //$$ String line2 = signBlockEntity.getMessage(1, false).getString();
-            //$$ String line3 = signBlockEntity.getMessage(2, false).getString();
-            //$$ String line4 = signBlockEntity.getMessage(3, false).getString();
+            var signText = signBlockEntity.getText(front);
+            String line1 = signText.getMessage(0, false).getString();
+            String line2 = signText.getMessage(1, false).getString();
+            String line3 = signText.getMessage(2, false).getString();
+            String line4 = signText.getMessage(3, false).getString();
             //#endif
+            //#if MC >= 260300
+            //$$ ServerboundSignUpdatePacket packet = new ServerboundSignUpdatePacket(sign.getBlockPos(),
+            //$$         java.util.List.of(line1, line2, line3, line4),
+            //$$         front ? net.minecraft.world.level.block.entity.SignTextSlot.FRONT
+            //$$                 : net.minecraft.world.level.block.entity.SignTextSlot.BACK);
+            //#else
             ServerboundSignUpdatePacket packet = new ServerboundSignUpdatePacket(sign.getBlockPos(),
-                    //#if MC > 11904
                     front,
-                    //#endif
                     line1,
                     line2,
                     line3,
                     line4
             );
+            //#endif
+            //#else
+            //$$ String line1 = signBlockEntity.getMessage(0, false).getString();
+            //$$ String line2 = signBlockEntity.getMessage(1, false).getString();
+            //$$ String line3 = signBlockEntity.getMessage(2, false).getString();
+            //$$ String line4 = signBlockEntity.getMessage(3, false).getString();
+            //$$ ServerboundSignUpdatePacket packet = new ServerboundSignUpdatePacket(sign.getBlockPos(), line1, line2, line3, line4);
+            //#endif
             this.connection.send(packet);
             ci.cancel();
         });

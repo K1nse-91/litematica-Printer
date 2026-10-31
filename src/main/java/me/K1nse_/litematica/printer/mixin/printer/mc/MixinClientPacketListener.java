@@ -7,6 +7,7 @@ import me.K1nse_.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.K1nse_.litematica.printer.handler.scan.DirtyRegionTracker;
 import me.K1nse_.litematica.printer.handler.scan.ScanCache;
 import me.K1nse_.litematica.printer.utils.InteractionUtils;
+import me.K1nse_.litematica.printer.utils.PacketSoundConfirmationTracker;
 import me.K1nse_.litematica.printer.utils.minecraft.MessageUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -40,6 +41,7 @@ public abstract class MixinClientPacketListener {
         ScanCache.INSTANCE.invalidate(packet.getPos());
         DirtyRegionTracker.INSTANCE.markDirty(packet.getPos());
         InteractionUtils.INSTANCE.confirmServerBlockUpdate(packet.getPos());
+        PacketSoundConfirmationTracker.confirmServerBlockUpdate(packet.getPos(), packet.getBlockState());
         HudStatsManager.INSTANCE.confirmBlockUpdate(packet.getPos());
         BedrockController.onServerBlockUpdate(packet.getPos());
     }
@@ -50,6 +52,7 @@ public abstract class MixinClientPacketListener {
             ScanCache.INSTANCE.invalidate(pos);
             DirtyRegionTracker.INSTANCE.markDirty(pos);
             InteractionUtils.INSTANCE.confirmServerBlockUpdate(pos);
+            PacketSoundConfirmationTracker.confirmServerBlockUpdate(pos, state);
             HudStatsManager.INSTANCE.confirmBlockUpdate(pos);
             BedrockController.onServerBlockUpdate(pos);
         });

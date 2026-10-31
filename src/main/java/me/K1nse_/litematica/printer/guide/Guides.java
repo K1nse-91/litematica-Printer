@@ -25,10 +25,13 @@ public class Guides {
         // ============================================================
         // 跳过指南（对无需放置的方块直接跳过，优先级低于 WaterGuide）
         // ============================================================
+        // 睡莲（移植自 EMT）：贴水面放置
+        register(LilyPadGuide.class, LilyPadBlock.class);
+
         register(SkipGuide.class,
                 LiquidBlock.class,
-                BubbleColumnBlock.class,
-                LilyPadBlock.class
+                BubbleColumnBlock.class
+                // LilyPadBlock 已由 LilyPadGuide 接管
         );
 
         // 火把
@@ -147,7 +150,11 @@ public class Guides {
         register(ComparatorGuide.class, net.minecraft.world.level.block.ComparatorBlock.class);
 
         // 红石线（点状/十字形）
+        //#if MC >= 260300
+        //$$ register(RedstoneWireGuide.class, RedstoneWireBlock.class);
+        //#else
         register(RedstoneWireGuide.class, RedStoneWireBlock.class);
+        //#endif
 
         // 拉杆
         register(LeverGuide.class, LeverBlock.class);
@@ -200,7 +207,11 @@ public class Guides {
         // ============================================================
 
         // 耕地/土径
+        //#if MC >= 260300
+        //$$ register(SoilGuide.class, FarmlandBlock.class, PathBlock.class);
+        //#else
         register(SoilGuide.class, FarmlandBlock.class, DirtPathBlock.class);
+        //#endif
 
         // 花盆
         register(FlowerPotGuide.class, FlowerPotBlock.class);
@@ -214,6 +225,11 @@ public class Guides {
 
         // 死珊瑚（需过滤非珊瑚方块）
         register(CoralGuide.class);
+
+        // ============================================================
+        // 材料替代放置（移植自 EMT）：目标缺失时用替代方块顶上，兜底前拦截
+        // ============================================================
+        register(SubstituteGuide.class);
 
         // ============================================================
         // 默认指南（最低优先级，兜底所有未被上面接管的方块）

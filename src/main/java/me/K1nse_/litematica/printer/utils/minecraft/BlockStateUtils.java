@@ -155,4 +155,16 @@ public class BlockStateUtils extends BlockUtils {
         }
         return isSourceWaterOrBubbleColumn(currentState);
     }
+
+    /** 区块列是否已加载（移植自 EMT，供自动寻路扫描） */
+    public static boolean isColumnLoaded(net.minecraft.client.multiplayer.ClientLevel level, int chunkX, int chunkZ) {
+        return level.getChunkSource().hasChunk(chunkX, chunkZ);
+    }
+    /** 同方块但状态不同（视为可破坏后重放的“可修复状态差异”，移植自 EMT） */
+    public static boolean hasFixableStateDifference(BlockState requiredState, BlockState currentState) {
+        if (requiredState.getBlock() != currentState.getBlock()) {
+            return false;
+        }
+        return !statesEqualIgnoreProperties(requiredState, currentState);
+    }
 }

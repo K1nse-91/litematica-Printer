@@ -19,6 +19,10 @@ public class ConfigBuilders {
         return new IntegerConfigBuilder(translateKey);
     }
 
+    public static DoubleConfigBuilder doubleValue(String translateKey) {
+        return new DoubleConfigBuilder(translateKey);
+    }
+
     public static StringListConfigBuilder stringList(String translateKey) {
         return new StringListConfigBuilder(translateKey);
     }

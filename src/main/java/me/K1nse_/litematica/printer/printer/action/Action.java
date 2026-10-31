@@ -137,6 +137,13 @@ public class Action {
     @SuppressWarnings("SequencedCollectionMethodCanBeUsed")
     public @Nullable Direction getValidSide(ClientLevel world, BlockPos pos) {
         List<Direction> orderedSides = getOrderedSides();
+        Direction forced = getForcedDirection();
+        if (forced != null && orderedSides.contains(forced)) {
+            BlockPos forcedNeighbor = pos.relative(forced);
+            if (PrinterUtils.canBeClicked(world, forcedNeighbor) && !BlockUtils.isReplaceable(world.getBlockState(forcedNeighbor))) {
+                return forced;
+            }
+        }
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
             return orderedSides.isEmpty() ? null : orderedSides.get(0);
         }
@@ -273,4 +280,12 @@ public class Action {
         }
         return ordered;
     }
+    @Nullable
+    private static Direction getForcedDirection() {
+        if (!(Configs.Placement.PLACE_DEFAULT_DIRECTION.getOptionListValue() instanceof me.K1nse_.litematica.printer.enums.DefaultPlaceDirectionType type)) {
+            return null;
+        }
+        return type.toDirection();
+    }
+
 }

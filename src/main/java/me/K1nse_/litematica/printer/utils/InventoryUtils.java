@@ -437,4 +437,23 @@ public class InventoryUtils {
             return this == SUCCESS;
         }
     }
+    /** 统计主背包 + 副手中满足谓词的物品总数（移植自 EMT 的预留物品判定） */
+    public static int countMatchingMainInventory(net.minecraft.client.player.LocalPlayer player, java.util.function.Predicate<ItemStack> predicate) {
+        if (player == null) {
+            return 0;
+        }
+        int total = 0;
+        Inventory inventory = player.getInventory();
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty() && predicate.test(stack)) {
+                total += stack.getCount();
+            }
+        }
+        ItemStack offhand = player.getOffhandItem();
+        if (!offhand.isEmpty() && predicate.test(offhand)) {
+            total += offhand.getCount();
+        }
+        return total;
+    }
 }

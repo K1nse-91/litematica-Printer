@@ -3,6 +3,7 @@ package me.K1nse_.litematica.printer.enums;
 import me.K1nse_.litematica.printer.printer.SchematicBlockContext;
 import me.K1nse_.litematica.printer.utils.minecraft.BlockStateUtils;
 import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 
 public enum BlockMatchResult {
@@ -41,6 +42,29 @@ public enum BlockMatchResult {
             return MISSING;
         }
         return WRONG_BLOCK;
+    }
+
+    /** 两个方块状态直接比较（移植自 EMT，供自动寻路等场景使用） */
+    public static BlockMatchResult compare(BlockState required, BlockState current) {
+        if (required.equals(current)) {
+            return CORRECT;
+        }
+        if (required.getBlock().equals(current.getBlock())) {
+            return WRONG_STATE;
+        }
+        if (!required.isAir() && BlockStateUtils.isReplaceable(current)) {
+            return MISSING;
+        }
+        return WRONG_BLOCK;
+    }
+
+    /** 两个状态是否视为等价（忽略属性顺序，移植自 EMT） */
+    public static boolean isCorrect(BlockState requiredState, BlockState currentState) {
+        if (requiredState.equals(currentState)) {
+            return true;
+        }
+        return requiredState.getBlock().equals(currentState.getBlock())
+                && BlockStateUtils.statesEqualIgnoreProperties(requiredState, currentState);
     }
 }
 

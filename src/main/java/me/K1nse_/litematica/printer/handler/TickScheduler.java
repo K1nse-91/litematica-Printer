@@ -26,8 +26,12 @@ final class TickScheduler {
     }
 
     void tick() {
+        if (MC.player != null) {
+            me.K1nse_.litematica.printer.utils.HandRestockShulkerCompat.clientTick(MC.player);
+        }
         HudStatsManager.INSTANCE.tick();
         PrintProgressTracker.INSTANCE.tick();
+        me.K1nse_.litematica.printer.printer.RenderOnlyBlockCache.tickPendingReload();
         if (!Configs.Core.WORK_SWITCH.getBooleanValue()) {
             HudStatsManager.INSTANCE.resetAll();
             this.lastPauseReason = null;

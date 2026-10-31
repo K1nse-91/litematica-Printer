@@ -11,6 +11,7 @@ import me.K1nse_.litematica.printer.printer.action.Action;
 import me.K1nse_.litematica.printer.printer.action.ClickAction;
 import me.K1nse_.litematica.printer.utils.ConfigUtils;
 import me.K1nse_.litematica.printer.utils.InventoryUtils;
+import me.K1nse_.litematica.printer.utils.PacketSoundConfirmationTracker;
 import me.K1nse_.litematica.printer.utils.minecraft.DirectionUtils;
 import me.K1nse_.litematica.printer.utils.minecraft.MessageUtils;
 import me.K1nse_.litematica.printer.utils.mods.LitematicaUtils;
@@ -67,6 +68,10 @@ public final class PrintPlacementExecutor {
         ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.isNeedWaitModifyLook());
         HudStatsManager.INSTANCE.trackExpectedBlockState(HudStatsManager.Mode.PRINT, blockPos, context.requiredState);
         HudStatsManager.INSTANCE.recordRateUnit(HudStatsManager.Mode.PRINT, 1);
+        // 声音包确认（移植自 EMT）：纯发包放置时，服务端方块更新命中后才播放放置音效
+        if (Configs.Print.PRINT_USE_PACKET.getBooleanValue()) {
+            PacketSoundConfirmationTracker.trackPlacement(blockPos, context.requiredState);
+        }
 
         boolean consumedEffectiveExecution = action.isConsumeEffectiveExecution();
         boolean needWaitModifyLook = ActionManager.INSTANCE.sendQueue(context.client.player).needWaitModifyLook;

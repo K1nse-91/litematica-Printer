@@ -5,7 +5,9 @@ import me.K1nse_.litematica.printer.handler.handlers.MineDebugLog;
 import me.K1nse_.litematica.printer.mixin_extension.BlockBreakResult;
 import me.K1nse_.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
 import me.K1nse_.litematica.printer.utils.ConfigUtils;
+import me.K1nse_.litematica.printer.utils.FilterUtils;
 import me.K1nse_.litematica.printer.utils.InteractionUtils;
+import me.K1nse_.litematica.printer.utils.PacketSoundConfirmationTracker;
 import me.K1nse_.litematica.printer.utils.minecraft.NetworkUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -36,6 +38,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @SuppressWarnings({"DataFlowIssue", "DuplicateCondition"})
@@ -203,6 +206,9 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         if (blockState.isAir()) {
             return;
         }
+        if (!Configs.Break.BREAK_SOUND.getBooleanValue()) {
+            return;
+        }
         if (!force && this.litematica_printer$hitSoundTicks % 4.0F != 0.0F) {
             this.litematica_printer$hitSoundTicks += 1.0F;
             return;
@@ -235,6 +241,14 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
     @Unique
     private void litematica_printer$playBlockBreakSound(BlockPos blockPos, BlockState blockState) {
         if (blockPos == null || blockState == null || blockState.isAir()) {
+            return;
+        }
+        // 纯发包破坏：改走声音包确认（服务端方块更新命中后才播），否则按开关播放本地音效
+        if (Configs.Break.BREAK_USE_PACKET.getBooleanValue()) {
+            PacketSoundConfirmationTracker.trackBreak(blockPos, blockState);
+            return;
+        }
+        if (!Configs.Break.BREAK_SOUND.getBooleanValue()) {
             return;
         }
         SoundType soundType = blockState.getSoundType();
@@ -386,6 +400,44 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         //#endif
     }
 
+    /** 瞬时破坏名单：开关开启时，名单内方块直接发送 START+STOP 两包瞬破（服务端仍需认可可破坏） */
+    @Unique
+    private boolean litematica_printer$instantMine(BlockPos blockPos, Direction direction) {
+        if (!Configs.Break.BREAK_INSTANT_MINE.getBooleanValue()) {
+            return false;
+        }
+        List<String> veilList = Configs.Break.BREAK_INSTANT_MINE_LIST.getStrings();
+        if (veilList.isEmpty()) {
+            return false;
+        }
+        if (this.minecraft.level == null) {
+            return false;
+        }
+        BlockState veilState = this.minecraft.level.getBlockState(blockPos);
+        if (veilList.stream().noneMatch(s -> FilterUtils.matchName(s, veilState))) {
+            return false;
+        }
+        LocalPlayer player = this.minecraft.player;
+        if (this.litematica_printer$hasHold(blockPos)) {
+            this.litematica_printer$clearHold(player);
+        }
+        if (this.isDestroying && !this.sameDestroyTarget(blockPos)) {
+            NetworkUtils.sendPacket(getActionPacket(Action.ABORT_DESTROY_BLOCK, this.destroyBlockPos, direction, 0));
+        }
+        this.isDestroying = false;
+        this.destroyProgress = 0.0F;
+        if (this.hasDelayedDestroy && blockPos.equals(this.delayedDestroyPos)) {
+            this.hasDelayedDestroy = false;
+            this.delayedDestroyLocalPrediction = false;
+        }
+        NetworkUtils.sendPacket(sequence -> getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence));
+        if (Configs.Break.BREAK_SOUND.getBooleanValue() && this.minecraft.level != null) {
+            PacketSoundConfirmationTracker.trackBreak(blockPos, this.minecraft.level.getBlockState(blockPos));
+        }
+        NetworkUtils.sendPacket(sequence -> getActionPacket(Action.STOP_DESTROY_BLOCK, blockPos, direction, sequence));
+        return true;
+    }
+
     @Override
     public BlockBreakResult litematica_printer$continueDestroyBlockForMine(BlockPos blockPos, Direction direction, boolean allowToolSwitch) {
         LocalPlayer player = minecraft.player;
@@ -393,6 +445,15 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         MultiPlayerGameMode gameMode = minecraft.gameMode;
         if (player == null || level == null || gameMode == null) {
             return BlockBreakResult.FAILED;
+        }
+
+        // 让位手动挖掘（移植自 EMT）
+        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && InteractionUtils.isPlayerMining()) {
+            return BlockBreakResult.ABORTED;
+        }
+    /** 瞬时破坏名单：开关开启时，名单内方块直接发送 START+STOP 两包瞬破（服务端仍需认可可破坏） */
+        if (this.litematica_printer$instantMine(blockPos, direction)) {
+            return BlockBreakResult.COMPLETED;
         }
 
         BlockState blockState = level.getBlockState(blockPos);
@@ -472,6 +533,14 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
         MultiPlayerGameMode gameMode = minecraft.gameMode;
         if (player == null || level == null || gameMode == null) {
             return BlockBreakResult.FAILED;
+        }
+        // 让位手动挖掘（移植自 EMT）
+        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && InteractionUtils.isPlayerMining()) {
+            return BlockBreakResult.ABORTED;
+        }
+    /** 瞬时破坏名单：开关开启时，名单内方块直接发送 START+STOP 两包瞬破（服务端仍需认可可破坏） */
+        if (this.litematica_printer$instantMine(blockPos, direction)) {
+            return BlockBreakResult.COMPLETED;
         }
         boolean localEffects = localPrediction || forceDelayedDestroy;
         boolean localBlockRemoval = localPrediction && !forceDelayedDestroy;

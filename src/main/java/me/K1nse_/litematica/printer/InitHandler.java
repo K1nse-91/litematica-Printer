@@ -7,6 +7,7 @@ import me.K1nse_.litematica.printer.enums.PrintModeType;
 import me.K1nse_.litematica.printer.handler.ClientPlayerTickManager;
 import me.K1nse_.litematica.printer.handler.handlers.bedrock.BedrockController;
 import me.K1nse_.litematica.printer.printer.zxy.utils.HighlightBlockRenderer;
+import me.K1nse_.litematica.printer.printer.verifier.VerifierRegistry;
 import me.K1nse_.litematica.printer.utils.minecraft.MessageUtils;
 
 import static me.K1nse_.litematica.printer.config.Configs.*;
@@ -21,6 +22,8 @@ public class InitHandler implements IInitializationHandler {
         initModConfig();
         initConfigCallback();
         HighlightBlockRenderer.init();  // 高亮显示方块渲染器
+        // 优化校验器（移植自 EMT）：异步分区校验 + 待渲染区块 + 断线清理
+                VerifierRegistry.init();
     }
 
     private void initConfigCallback() {

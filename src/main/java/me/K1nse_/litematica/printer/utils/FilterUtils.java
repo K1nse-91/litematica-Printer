@@ -75,6 +75,19 @@ public class FilterUtils {
             return false;
         }
 
+        // NBT 规则：@nbt:<base64url(JSON)> 携带方块状态条件，先校验状态再按 blockMatcher 继续匹配名称
+        if (targetObj instanceof BlockState blockState) {
+            BlockNbtRule nbtRule = BlockNbtRule.parse(expectedName);
+            if (nbtRule.hasConditions()) {
+                if (!nbtRule.matchesState(blockState)) {
+                    return false;
+                }
+                if (!nbtRule.blockMatcher().isBlank()) {
+                    expectedName = nbtRule.blockMatcher();
+                }
+            }
+        }
+
         // 解析期望名称和匹配规则（逗号分隔，第一个是名称，后续是规则）
         ParsedFilter parsedFilter = parseExpectedName(expectedName);
         String coreName = parsedFilter.coreName();

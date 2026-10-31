@@ -27,6 +27,7 @@ public class I18n {
 
     // 破基岩模式提示
     public static final I18n BEDROCK_CREATIVE_MODE = of("message.bedrock.creative_mode");
+    public static final I18n BEDROCK_EXTERNAL_MOD_NOT_LOADED = of("message.bedrock.external_mod_not_loaded");
 
     // 快捷潜影盒提示
     public static final I18n SHULKER_MOD_NOT_LOADED = of("message.shulker.mod_not_loaded");
@@ -38,6 +39,14 @@ public class I18n {
     public static final I18n INVENTORY_FULL = of("message.inventory.full");
     public static final I18n INVENTORY_RESTORE_FAILED = of("message.inventory.restore_failed");
     public static final I18n INVENTORY_SHULKER_OCCUPIED = of("message.inventory.shulker_occupied");
+
+    // 背包同步提示（移植自 EMT）
+    public static final I18n INVENTORY_SYNC_NOT_CONTAINER = of("message.inventory_sync.not_container");
+    public static final I18n INVENTORY_SYNC_CONTAINER_CANNOT_OPEN = of("message.inventory_sync.container_cannot_open");
+    public static final I18n INVENTORY_SYNC_CANCELLED = of("message.inventory_sync.cancelled");
+    public static final I18n INVENTORY_SYNC_TOO_FAR = of("message.inventory_sync.too_far");
+    public static final I18n INVENTORY_SYNC_REMAINING = of("message.inventory_sync.remaining");
+    public static final I18n INVENTORY_SYNC_COMPLETE = of("message.inventory_sync.complete");
 
     private static final String PREFIX_CONFIG = "config";
     private static final String PREFIX_COMMENT = "desc";

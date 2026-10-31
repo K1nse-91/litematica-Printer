@@ -1,5 +1,6 @@
 package me.K1nse_.litematica.printer.printer;
 
+import me.K1nse_.litematica.printer.enums.IterationOrderType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.Vec3i;
 import org.jetbrains.annotations.NotNull;
@@ -14,6 +15,12 @@ public class PrinterBox implements Iterable<BlockPos> {
     public static final Minecraft client = Minecraft.getInstance();
     public final int minX, minY, minZ;
     public final int maxX, maxY, maxZ;
+
+    // ---- 迭代方向（移植自 EMT）----
+    public boolean yIncrement = true;
+    public boolean xIncrement = true;
+    public boolean zIncrement = true;
+    public IterationOrderType iterationMode = IterationOrderType.XZY;
 
     public PrinterBox(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
         this.minX = Math.min(minX, maxX);
@@ -97,12 +104,19 @@ public class PrinterBox implements Iterable<BlockPos> {
 
         @Override
         public boolean hasNext() {
-            if (currPos == null) return true;
+            if (minY > maxY) {
+                return false;
+            }
+            if (currPos == null) {
+                return true;
+            }
             int x = currPos.getX();
             int y = currPos.getY();
             int z = currPos.getZ();
-
-            return !(x == maxX && y == maxY && z == maxZ);
+            int targetX = xIncrement ? maxX : minX;
+            int targetY = yIncrement ? maxY : minY;
+            int targetZ = zIncrement ? maxZ : minZ;
+            return x != targetX || y != targetY || z != targetZ;
         }
 
         @Override
@@ -110,31 +124,43 @@ public class PrinterBox implements Iterable<BlockPos> {
             if (!this.hasNext()) {
                 throw new NoSuchElementException();
             }
-
-            // 初始化起始位置
             if (currPos == null) {
                 currPos = new BlockPos(
-                        minX,
-                        minY,
-                        minZ
+                        IterationOrderType.Axis.X.reset(PrinterBox.this),
+                        IterationOrderType.Axis.Y.reset(PrinterBox.this),
+                        IterationOrderType.Axis.Z.reset(PrinterBox.this)
                 );
                 return currPos;
             }
-
             int x = currPos.getX();
             int y = currPos.getY();
             int z = currPos.getZ();
 
-            x++;
-            if (x > maxX) {
-                x = minX;
-                z++;
-                if (z > maxZ) {
-                    z = minZ;
-                    y++;
+            boolean advanced = false;
+            for (IterationOrderType.Axis axis : iterationMode.axis) {
+                int newValue = axis.increment(PrinterBox.this, axis.getCoord(PrinterBox.this, x, y, z));
+                if (!axis.isOverflow(PrinterBox.this, newValue)) {
+                    switch (axis) {
+                        case X -> x = newValue;
+                        case Y -> y = newValue;
+                        case Z -> z = newValue;
+                        default -> {
+                        }
+                    }
+                    advanced = true;
+                    break;
+                }
+                switch (axis) {
+                    case X -> x = axis.reset(PrinterBox.this);
+                    case Y -> y = axis.reset(PrinterBox.this);
+                    case Z -> z = axis.reset(PrinterBox.this);
+                    default -> {
+                    }
                 }
             }
-
+            if (!advanced) {
+                throw new NoSuchElementException();
+            }
             currPos = new BlockPos(x, y, z);
             return currPos;
         }

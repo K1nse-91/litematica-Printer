@@ -31,6 +31,14 @@ public class HotkeysCallback {
             }
             return true;
         }
+        if (key == Configs.Hotkeys.SYNC_INVENTORY.getKeybind()) {
+            if (action == KeyAction.PRESS) {
+                //#if MC >= 12102
+                me.K1nse_.litematica.printer.printer.zxy.utils.ZxyUtils.startOrOffSyncInventory();
+                //#endif
+            }
+            return true;
+        }
 
         return false;
     }

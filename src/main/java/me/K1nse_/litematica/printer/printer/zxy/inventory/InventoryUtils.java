@@ -47,6 +47,12 @@ public class InventoryUtils {
 
     private static final Minecraft client = Minecraft.getInstance();
 
+    /** 最近一次程序化打开潜影盒的 tick（供手部补货判断） */
+    private static long lastShulkerOpenTick = Long.MIN_VALUE;
+    /** 抑制容器界面弹出的截止 tick（防止自动开盒闪屏） */
+    private static long suppressScreenUntilTick = Long.MIN_VALUE;
+
+
     public static boolean isInventory(Level world, BlockPos pos) {
         return fi.dy.masa.malilib.util.InventoryUtils.getInventory(world, pos) != null;
     }
@@ -238,6 +244,7 @@ public class InventoryUtils {
                             }
                             ModLoadUtils.closeScreen++;
                             isOpenHandler = true;
+                    markShulkerOpened();
                             openHandlerTimeout = OPEN_HANDLER_TIMEOUT_TICKS;
                             shulkerCooldown = Configs.Placement.QUICK_SHULKER_COOLDOWN.getIntegerValue();
                             return true;
@@ -256,6 +263,7 @@ public class InventoryUtils {
                             }
                             ModLoadUtils.closeScreen++;
                             isOpenHandler = true;
+                    markShulkerOpened();
                             openHandlerTimeout = OPEN_HANDLER_TIMEOUT_TICKS;
                             shulkerCooldown = Configs.Placement.QUICK_SHULKER_COOLDOWN.getIntegerValue();
                             return true;
@@ -302,8 +310,67 @@ public class InventoryUtils {
     private static void clearSwitchRequest() {
         shulkerBoxSlot = -1;
         lastNeedItemList = new LinkedHashSet<>();
+                if (Minecraft.getInstance().player != null) {
+                    me.K1nse_.litematica.printer.utils.HandRestockShulkerCompat.onQuickShulkerTransferFinished(Minecraft.getInstance().player);
+                }
         isOpenHandler = false;
         openHandlerTimeout = 0;
         axShulkersAttemptedSlots.clear();
+    }
+
+    /** 程序化打开潜影盒时调用：记录时间并打开抑制窗口 */
+    public static void markShulkerOpened() {
+        if (client.level == null) {
+            return;
+        }
+        long tick = client.level.getGameTime();
+        lastShulkerOpenTick = tick;
+        suppressScreenUntilTick = tick + 6L;
+    }
+
+    /** 最近是否刚自动开过潜影盒（避免补货递归触发） */
+    public static boolean hasRecentlyOpenedShulker(LocalPlayer player) {
+        if (player == null || player.level() == null || lastShulkerOpenTick == Long.MIN_VALUE) {
+            return false;
+        }
+        return player.level().getGameTime() - lastShulkerOpenTick <= 40L;
+    }
+
+    /** 自动开盒期间抑制容器界面 */
+    public static boolean shouldSuppressContainerScreen() {
+        if (client.level == null || suppressScreenUntilTick == Long.MIN_VALUE) {
+            return false;
+        }
+        return isOpenHandler || client.level.getGameTime() <= suppressScreenUntilTick;
+    }
+
+    /** 统计背包 + 潜影盒内的可用数量 */
+    public static int countAvailableIncludingShulkers(LocalPlayer player, Item item) {
+        if (player == null || item == null) {
+            return 0;
+        }
+        int count = me.K1nse_.litematica.printer.utils.InventoryUtils.countMatchingMainInventory(player, stack -> stack.is(item));
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack box = player.getInventory().getItem(slot);
+            if (box.isEmpty() || !BuiltInRegistries.ITEM.getKey(box.getItem()).getPath().contains("shulker_box")) {
+                continue;
+            }
+            NonNullList<ItemStack> stored = fi.dy.masa.malilib.util.InventoryUtils.getStoredItems(box, -1);
+            for (ItemStack content : stored) {
+                if (!content.isEmpty() && content.is(item)) {
+                    count += content.getCount();
+                }
+            }
+        }
+        return count;
+    }
+
+    /** 手部补货：登记需求并触发快速潜影盒取物 */
+    public static void addQuickShulkerDemand(Item item) {
+        if (item == null) {
+            return;
+        }
+        lastNeedItemList.add(item);
+        switchItem();
     }
 }

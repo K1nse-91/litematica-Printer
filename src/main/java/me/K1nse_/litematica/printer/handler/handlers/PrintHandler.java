@@ -53,6 +53,17 @@ public class PrintHandler extends Module {
     private static final int GROUP_COLLECT_LIMIT = 48;
     private int pendingCount;
 
+    // ---- 打印增强（移植自 EMT）----
+    /** 未确认放置重试表 */
+    private final Map<Long, RetryEntry> retryTable = new LinkedHashMap<>();
+    private static final int MAX_PLACE_RETRIES = 2;
+    @Nullable
+    private Item activePlacementItem;
+    private long nextPlacementItemTick;
+
+    private record RetryEntry(BlockPos pos, BlockState requiredState, long sentTick, int attempts) {
+    }
+
     public PrintHandler() {
         super(NAME, PrintModeType.PRINTER, Configs.Core.PRINT, Configs.Print.PRINT_SELECTION_TYPE, true);
     }
@@ -95,6 +106,8 @@ public class PrintHandler extends Module {
     @Override
     protected void preprocess() {
         this.updatePrintSkipCache();
+        this.autoEnableForLoadedSchematic();
+        this.processRetries();
         if (!this.groupCollecting) {
             this.processGroups();
         }
@@ -144,6 +157,9 @@ public class PrintHandler extends Module {
         }
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
         if (this.shouldSkipRequiredState(ctx.requiredState)) {
+        if (this.shouldDeferShulker(ctx)) {
+            return false;
+        }
             return false;
         }
         PrintTaskBuildResult taskResult = this.printTasks.buildAction(ctx);
@@ -188,6 +204,11 @@ public class PrintHandler extends Module {
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         PrintTaskAction taskAction = this.printTaskAction;
+        if (!this.canAffordReserve(this.action, this.ctx)) {
+            this.setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+            setIterationConsumedEffectiveExecution(false);
+            return;
+        }
         PrintPlacementResult result = this.placementExecutor.execute(this.ctx, this.action, taskAction);
         if (!result.consumedEffectiveExecution()) {
             setIterationConsumedEffectiveExecution(false);
@@ -200,10 +221,29 @@ public class PrintHandler extends Module {
         }
         if (result.cooldownTicks() >= 0) {
             setBlockPosCooldown(blockPos, result.cooldownTicks());
+        if (this.ctx != null && result.taskEvent() != PrintPlacementResult.TaskEvent.FAILURE) {
+            this.trackForRetry(blockPos, this.ctx.requiredState);
+            this.trackShulkerPlaced(blockPos, this.ctx.requiredState);
+        }
         }
     }
 
     private void enterProcessMode() {
+        // 同物品优先（移植自 EMT）：先把当前手持物品的分组提到最前
+        if (Configs.Print.PLACE_SAME_ITEM_FIRST.getBooleanValue() && this.player != null && !this.pendingGroups.isEmpty()) {
+            Item held = this.player.getMainHandItem().getItem();
+            if (held != net.minecraft.world.item.Items.AIR && this.pendingGroups.containsKey(held)) {
+                Map<Item, ArrayDeque<BlockPos>> reordered = new LinkedHashMap<>();
+                reordered.put(held, this.pendingGroups.get(held));
+                for (Map.Entry<Item, ArrayDeque<BlockPos>> entry : this.pendingGroups.entrySet()) {
+                    if (entry.getKey() != held) {
+                        reordered.put(entry.getKey(), entry.getValue());
+                    }
+                }
+                this.pendingGroups.clear();
+                this.pendingGroups.putAll(reordered);
+            }
+        }
         this.groupCollecting = false;
         this.groupIter = this.pendingGroups.entrySet().iterator();
         this.currentGroupEntry = null;
@@ -225,6 +265,9 @@ public class PrintHandler extends Module {
                     this.groupCollecting = true;
                     return;
                 }
+            }
+            if (!this.canSwitchToPlacementItem(this.currentGroupEntry.getKey())) {
+                return;
             }
             ArrayDeque<BlockPos> queue = this.currentGroupEntry.getValue();
             BlockPos pos = queue.pollFirst();
@@ -250,6 +293,10 @@ public class PrintHandler extends Module {
         if (action.isEmpty()) {
             return;
         }
+        if (!this.canAffordReserve(action.get(), ctx)) {
+            this.setBlockPosCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+            return;
+        }
         PrintTaskAction taskAction = this.printTasks.createActionHandle(ctx, action.get());
         PrintPlacementResult result = this.placementExecutor.execute(ctx, action.get(), taskAction);
         if (taskAction != null) {
@@ -261,6 +308,10 @@ public class PrintHandler extends Module {
         }
         if (result.cooldownTicks() >= 0) {
             setBlockPosCooldown(blockPos, result.cooldownTicks());
+        }
+        if (result.taskEvent() != PrintPlacementResult.TaskEvent.FAILURE) {
+            this.trackForRetry(blockPos, ctx.requiredState);
+            this.trackShulkerPlaced(blockPos, ctx.requiredState);
         }
     }
 
@@ -280,5 +331,161 @@ public class PrintHandler extends Module {
         return super.isBlockPosOnCooldown(pos);
     }
 
-}
 
+    // ==================== 打印增强实现（移植自 EMT）====================
+
+    /** 加载投影后自动开启工作开关 */
+    private void autoEnableForLoadedSchematic() {
+        if (!Configs.Core.AUTO_ENABLE_PRINTER.getBooleanValue() || Configs.Core.WORK_SWITCH.getBooleanValue()) {
+            return;
+        }
+        if (this.level == null) {
+            return;
+        }
+        if (SchematicWorldHandler.getSchematicWorld() == null) {
+            return;
+        }
+        Configs.Core.WORK_SWITCH.setBooleanValue(true);
+    }
+
+    /** 纯发包放置的未确认重试：超过冷却仍未变成目标方块则重放一次 */
+    private void processRetries() {
+        if (this.retryTable.isEmpty()) {
+            return;
+        }
+        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+        if (this.level == null || schematic == null) {
+            this.retryTable.clear();
+            return;
+        }
+        long now = this.level.getGameTime();
+        int cooldown = Math.max(4, ConfigUtils.getPlaceCooldown());
+        List<BlockPos> retryPositions = new ArrayList<>();
+        Iterator<Map.Entry<Long, RetryEntry>> iterator = this.retryTable.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Long, RetryEntry> entry = iterator.next();
+            RetryEntry record = entry.getValue();
+            BlockPos pos = record.pos();
+            BlockState actual = this.level.getBlockState(pos);
+            if (!actual.isAir() && actual.getBlock() == record.requiredState().getBlock()) {
+                iterator.remove();
+                continue;
+            }
+            if (now - record.sentTick() < cooldown) {
+                continue;
+            }
+            if (record.attempts() >= MAX_PLACE_RETRIES) {
+                iterator.remove();
+                continue;
+            }
+            entry.setValue(new RetryEntry(pos, record.requiredState(), now, record.attempts() + 1));
+            retryPositions.add(pos);
+        }
+        for (BlockPos pos : retryPositions) {
+            SchematicBlockContext retryCtx = new SchematicBlockContext(this.client, this.level, schematic, pos);
+            Optional<Action> retryAction = Guides.INSTANCE.buildAction(retryCtx);
+            retryAction.ifPresent(action -> this.placementExecutor.execute(retryCtx, action,
+                    this.printTasks.createActionHandle(retryCtx, action)));
+        }
+    }
+
+    private void trackForRetry(BlockPos pos, @Nullable BlockState requiredState) {
+        if (pos == null || requiredState == null || this.level == null) {
+            return;
+        }
+        if (!Configs.Print.PRINT_USE_PACKET.getBooleanValue()) {
+            return;
+        }
+        this.retryTable.put(pos.asLong(), new RetryEntry(pos.immutable(), requiredState, this.level.getGameTime(), 0));
+        if (this.retryTable.size() > 512) {
+            this.retryTable.clear();
+        }
+    }
+
+    private void trackShulkerPlaced(BlockPos pos, @Nullable BlockState requiredState) {
+        if (pos != null && requiredState != null && this.level != null
+                && requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock) {
+            me.K1nse_.litematica.printer.guide.guides.ShulkerPlacementGuard.INSTANCE.onPlaced(pos, this.level.getGameTime());
+        }
+    }
+
+    /** 预留物品：背包里该物品数量必须大于预留数才允许放置 */
+    private boolean canAffordReserve(@Nullable Action action, @Nullable SchematicBlockContext ctx) {
+        if (action == null || ctx == null || this.player == null) {
+            return true;
+        }
+        if (!Configs.Print.RESERVE_ITEMS.getBooleanValue() || this.player.getAbilities().instabuild) {
+            return true;
+        }
+        int reserve = Configs.Print.RESERVE_ITEM_COUNT.getIntegerValue();
+        if (reserve <= 0) {
+            return true;
+        }
+        Item[] requiredItems = action.getRequiredItems(ctx.requiredState.getBlock());
+        for (Item item : requiredItems) {
+            if (item == null || item == net.minecraft.world.item.Items.AIR) {
+                continue;
+            }
+            int count = InventoryUtils.countMatchingMainInventory(this.player, stack -> stack.is(item));
+            if (count <= reserve) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 潜影盒策略：跳过 / 后置 / 仅空盒 */
+    private boolean shouldDeferShulker(SchematicBlockContext ctx) {
+        if (!(ctx.requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock)) {
+            return false;
+        }
+        if (Configs.Print.SKIP_SHULKER.getBooleanValue()) {
+            return true;
+        }
+        if (Configs.Print.SHULKER_AFTER_ORDINARY.getBooleanValue() && this.hasPendingOrdinaryTargets()) {
+            this.setBlockPosCooldown(ctx.blockPos, ConfigUtils.getPlaceCooldown());
+            return true;
+        }
+        if (Configs.Print.ONLY_EMPTY_SHULKER.getBooleanValue()) {
+            me.K1nse_.litematica.printer.guide.guides.ShulkerPlacementGuard.GuardResult result =
+                    me.K1nse_.litematica.printer.guide.guides.ShulkerPlacementGuard.INSTANCE.evaluate(ctx);
+            if (result != me.K1nse_.litematica.printer.guide.guides.ShulkerPlacementGuard.GuardResult.READY) {
+                this.setBlockPosCooldown(ctx.blockPos, ConfigUtils.getPlaceCooldown());
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 分组队列里是否还有非潜影盒方块待放 */
+    private boolean hasPendingOrdinaryTargets() {
+        for (Map.Entry<Item, ArrayDeque<BlockPos>> entry : this.pendingGroups.entrySet()) {
+            if (entry.getValue().isEmpty()) {
+                continue;
+            }
+            if (!(entry.getKey() instanceof net.minecraft.world.item.BlockItem blockItem)
+                    || !(blockItem.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 切物品节流：同物品直接放，换物品要等 itemSwitchInterval */
+    private boolean canSwitchToPlacementItem(Item item) {
+        if (this.level == null) {
+            return true;
+        }
+        long tick = this.level.getGameTime();
+        if (this.activePlacementItem == item) {
+            return true;
+        }
+        if (tick < this.nextPlacementItemTick) {
+            return false;
+        }
+        int interval = Configs.Print.ITEM_SWITCH_INTERVAL.getIntegerValue();
+        this.activePlacementItem = item;
+        this.nextPlacementItemTick = tick + interval;
+        return true;
+    }
+}

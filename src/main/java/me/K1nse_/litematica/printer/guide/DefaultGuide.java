@@ -5,6 +5,7 @@ import me.K1nse_.litematica.printer.enums.BlockMatchResult;
 import me.K1nse_.litematica.printer.printer.SchematicBlockContext;
 import me.K1nse_.litematica.printer.printer.action.Action;
 import me.K1nse_.litematica.printer.utils.InteractionUtils;
+import me.K1nse_.litematica.printer.utils.minecraft.BlockStateUtils;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.properties.AttachFace;
@@ -124,6 +125,17 @@ public class DefaultGuide extends Guide {
                     InteractionUtils.INSTANCE.add(context);
                 }
             }
+        }
+        return Result.PASS;
+    }
+    @Override
+    protected Result onBuildActionWrongState(BlockMatchResult state) {
+        if (Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue()
+                && Configs.Print.BREAK_WRONG_STATE_BLOCK.getBooleanValue()
+                && BlockStateUtils.hasFixableStateDifference(requiredState, currentState)
+                && InteractionUtils.canBreakBlock(blockPos)
+                && InteractionUtils.breakRestriction(currentState)) {
+            InteractionUtils.INSTANCE.add(context);
         }
         return Result.PASS;
     }
