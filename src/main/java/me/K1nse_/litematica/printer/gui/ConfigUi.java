@@ -156,9 +156,16 @@ public class ConfigUi extends GuiConfigsBase {
                 this.rebuildScheduled = true;
                 Minecraft.getInstance().execute(() -> {
                     this.rebuildScheduled = false;
+                    //#if MC > 260100
+                    //$$ if (Minecraft.getInstance().gui.screen() != this) {
+                    //#else
+                    if (Minecraft.getInstance().screen != this) {
+                    //#endif
+                        return;
+                    }
                     try {
-                        this.reCreateListWidget();
-                        Objects.requireNonNull(this.getListWidget()).resetScrollbarPosition();
+                        // 与“重置”同一路径：重建列表后必须重新 initGui 布局，否则会留下空白页
+                        this.reset();
                     } catch (Throwable ignored) {
                     }
                 });
